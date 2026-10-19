@@ -168,12 +168,9 @@
                     </div>
                 </div>
 
-                <!-- Canvas Waveform Scroll Area -->
+                <!-- Canvas Waveform Canvas Container -->
                 <div id="waveformScrollContainer" class="flex-1 overflow-x-auto overflow-y-hidden relative waveform-container bg-slate-950">
-                    <div id="waveformInner" class="relative" style="height: 100%;">
-                        <canvas id="waveformStaticCanvas" class="absolute top-0 left-0"></canvas>
-                    </div>
-                    <canvas id="waveformOverlayCanvas" class="absolute top-0 left-0 pointer-events-none"></canvas>
+                    <canvas id="waveformCanvas" class="h-full block cursor-crosshair"></canvas>
                 </div>
 
                 <!-- AB Precision Fine Tuning Bar -->
@@ -240,12 +237,8 @@
         const muteBtn = document.getElementById('muteBtn');
 
         const waveformScrollContainer = document.getElementById('waveformScrollContainer');
-        const waveformInner = document.getElementById('waveformInner');
-        const staticCanvas = document.getElementById('waveformStaticCanvas');
-        const overlayCanvas = document.getElementById('waveformOverlayCanvas');
-        const sctx = staticCanvas.getContext('2d');
-        const octx = overlayCanvas.getContext('2d');
-
+        const waveformCanvas = document.getElementById('waveformCanvas');
+        const ctx = waveformCanvas.getContext('2d');
         const zoomInBtn = document.getElementById('zoomInBtn');
         const zoomOutBtn = document.getElementById('zoomOutBtn');
         const zoomLevelDisplay = document.getElementById('zoomLevelDisplay');
@@ -279,8 +272,12 @@
         const leftPanel = document.getElementById('leftPanel');
         const rightPanel = document.getElementById('rightPanel');
 
+        // Audio Context for Anti-Click Fade Smoothing
+        let audioContext = null;
+        let gainNode = null;
+        let mediaSource = null;
+
         // Application State
-        const MAX_CANVAS_WIDTH = 30000; // 波形画布最大宽度（像素），决定放大极限
         let audioBuffer = null;
         let zoomLevel = 1.0;
         let isAutoScrollEnabled = true;
@@ -298,230 +295,160 @@
         let dragRangeDuration = 0;
         let currentFileHandle = null;
 
-        // AB 循环 seek 状态
-        let isLoopSeeking = false;
+        // --- Initialize Audio Context with Fade Smoothing ---
+        function initAudioSmooth() {
+            if (!audioContext) {
+                const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                audioContext = new AudioCtx();
+                gainNode = audioContext.createGain();
+                mediaSource = audioContext.createMediaElementSource(mainMedia);
+                mediaSource.connect(gainNode);
+                gainNode.connect(audioContext.destination);
+            }
+            if (audioContext.state === 'suspended') {
+                audioContext.resume();
+            }
+        }
+
+        // Apply Micro-Fade to Eliminate Clicking/Popping Noise
+        function smoothJumpTo(targetTime) {
+            if (gainNode && audioContext) {
+                const now = audioContext.currentTime;
+                gainNode.gain.setValueAtTime(gainNode.gain.value, now);
+                gainNode.gain.linearRampToValueAtTime(0, now + 0.01); // 10ms Fast Fade-Out
+                
+                setTimeout(() => {
+                    mainMedia.currentTime = targetTime;
+                    const resumeTime = audioContext.currentTime;
+                    gainNode.gain.setValueAtTime(0, resumeTime);
+                    gainNode.gain.linearRampToValueAtTime(1, resumeTime + 0.015); // 15ms Smooth Fade-In
+                }, 10);
+            } else {
+                mainMedia.currentTime = targetTime;
+            }
+        }
 
         // --- 1. Audio Processing & Waveform Extraction ---
         async function loadMediaAudio(file) {
             try {
                 const arrayBuffer = await file.arrayBuffer();
-                const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-                audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
-                renderStaticWaveform();
-                drawOverlay();
+                const tempCtx = new (window.AudioContext || window.webkitAudioContext)();
+                audioBuffer = await tempCtx.decodeAudioData(arrayBuffer);
+                drawWaveform();
             } catch (err) {
                 console.warn('音频轨解析提示：文件可能无音频轨或格式不兼容。', err);
                 audioBuffer = null;
-                renderStaticWaveform();
-                drawOverlay();
+                drawWaveform();
             }
         }
 
-        // --- 2. 静态波形（只画一次）---
-        function renderStaticWaveform() {
-            const w = staticCanvas.width;
-            const h = staticCanvas.height;
-            if (w === 0 || h === 0) return;
+        function drawWaveform() {
+            const containerWidth = waveformScrollContainer.clientWidth;
+            const canvasWidth = Math.max(containerWidth, containerWidth * zoomLevel);
+            const canvasHeight = waveformScrollContainer.clientHeight || 120;
 
-            sctx.fillStyle = '#020617';
-            sctx.fillRect(0, 0, w, h);
+            waveformCanvas.width = canvasWidth;
+            waveformCanvas.height = canvasHeight;
+
+            ctx.fillStyle = '#020617';
+            ctx.fillRect(0, 0, canvasWidth, canvasHeight);
 
             if (!audioBuffer) {
-                sctx.fillStyle = '#475569';
-                sctx.font = '12px sans-serif';
-                sctx.textAlign = 'center';
-                sctx.fillText('选择或拖入音视频文件后在此呈现极清晰波形', w / 2, h / 2);
+                ctx.fillStyle = '#475569';
+                ctx.font = '12px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText('选择或拖入音视频文件后在此呈现极清晰波形', canvasWidth / 2, canvasHeight / 2);
                 return;
             }
 
-            const data = audioBuffer.getChannelData(0);
-            const samples = data.length;
-            const midY = h / 2;
-            const step = samples / w;
+            const rawData = audioBuffer.getChannelData(0);
+            const totalSamples = rawData.length;
+            const step = Math.ceil(totalSamples / canvasWidth);
+            const midY = canvasHeight / 2;
 
-            // 用 ImageData 直接写像素，30000px 宽也能很快完成
-            const img = sctx.createImageData(w, h);
-            const buf = img.data;
-            const colorTop = [14, 165, 233];    // #0ea5e9
-            const colorBottom = [56, 189, 248]; // #38bdf8
-
-            // 先铺背景
-            for (let i = 0; i < buf.length; i += 4) {
-                buf[i] = 2; buf[i + 1] = 6; buf[i + 2] = 23; buf[i + 3] = 255;
+            let maxAmp = 0;
+            const peaks = new Float32Array(canvasWidth);
+            for (let i = 0; i < canvasWidth; i++) {
+                let min = 1.0, max = -1.0;
+                const start = i * step;
+                for (let j = 0; j < step && (start + j) < totalSamples; j++) {
+                    const val = rawData[start + j];
+                    if (val < min) min = val;
+                    if (val > max) max = val;
+                }
+                const amp = Math.max(Math.abs(min), Math.abs(max));
+                peaks[i] = amp;
+                if (amp > maxAmp) maxAmp = amp;
             }
 
-            // 逐列计算 min/max
-            for (let x = 0; x < w; x++) {
-                const start = Math.floor(x * step);
-                const end = Math.min(samples, Math.floor((x + 1) * step));
-                let mn = 0, mx = 0;
-                const count = end - start;
-                if (count > 0) {
-                    const sub = Math.max(1, Math.floor(count / 400));
-                    for (let j = start; j < end; j += sub) {
-                        const v = data[j];
-                        if (v < mn) mn = v;
-                        if (v > mx) mx = v;
-                    }
-                }
-                // 映射到像素行
-                const yTop = Math.max(0, Math.floor(midY - mx * (midY - 2)));
-                const yBot = Math.min(h - 1, Math.ceil(midY - mn * (midY - 2)));
-                const y1 = Math.min(yTop, yBot);
-                const y2 = Math.max(yTop, yBot);
-                for (let y = y1; y <= y2; y++) {
-                    const idx = (y * w + x) * 4;
-                    const t = h > 1 ? y / (h - 1) : 0;
-                    // 顶部→底部渐变
-                    buf[idx]     = Math.round(colorTop[0] + (colorBottom[0] - colorTop[0]) * t);
-                    buf[idx + 1] = Math.round(colorTop[1] + (colorBottom[1] - colorTop[1]) * t);
-                    buf[idx + 2] = Math.round(colorTop[2] + (colorBottom[2] - colorTop[2]) * t);
-                    buf[idx + 3] = 255;
-                }
+            const scale = maxAmp > 0 ? (midY * 0.85) / maxAmp : midY * 0.85;
+
+            ctx.fillStyle = '#38bdf8';
+            for (let i = 0; i < canvasWidth; i++) {
+                const h = peaks[i] * scale;
+                ctx.fillRect(i, midY - h, 1, h * 2 || 1);
             }
 
-            // 中心参考线
-            const midIdxBase = Math.floor(midY) * w * 4;
-            for (let x = 0; x < w; x++) {
-                const idx = midIdxBase + x * 4;
-                buf[idx] = 30; buf[idx + 1] = 41; buf[idx + 2] = 59; buf[idx + 3] = 255;
-            }
+            ctx.strokeStyle = '#1e293b';
+            ctx.beginPath();
+            ctx.moveTo(0, midY);
+            ctx.lineTo(canvasWidth, midY);
+            ctx.stroke();
 
-            sctx.putImageData(img, 0, 0);
-        }
+            const duration = mainMedia.duration || audioBuffer.duration;
+            if (duration > 0) {
+                if (pointA !== null && pointB !== null) {
+                    const xA = (pointA / duration) * canvasWidth;
+                    const xB = (pointB / duration) * canvasWidth;
+                    const startX = Math.min(xA, xB);
+                    const endX = Math.max(xA, xB);
 
-        // --- 3. 动态覆盖层（每帧绘制，只覆盖视口）---
-        function drawOverlay() {
-            const vw = overlayCanvas.width;
-            const vh = overlayCanvas.height;
-            if (vw === 0 || vh === 0) return;
+                    ctx.fillStyle = 'rgba(14, 165, 233, 0.25)';
+                    ctx.fillRect(startX, 0, endX - startX, canvasHeight);
 
-            octx.clearRect(0, 0, vw, vh);
+                    ctx.fillStyle = '#0284c7';
+                    ctx.fillRect(startX, 0, endX - startX, 2);
+                    ctx.fillRect(startX, canvasHeight - 2, endX - startX, 2);
 
-            const duration = mainMedia.duration || (audioBuffer ? audioBuffer.duration : 0);
-            if (!duration || !isFinite(duration)) return;
+                    ctx.strokeStyle = '#10b981';
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.moveTo(xA, 0);
+                    ctx.lineTo(xA, canvasHeight);
+                    ctx.stroke();
 
-            const scrollLeft = waveformScrollContainer.scrollLeft;
-            const canvasW = staticCanvas.width;
-            const timeToX = (t) => (t / duration) * canvasW - scrollLeft;
+                    ctx.fillStyle = '#10b981';
+                    ctx.fillRect(xA - 5, 0, 10, 16);
+                    ctx.fillStyle = '#ffffff';
+                    ctx.font = 'bold 10px sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.fillText('A', xA, 12);
 
-            // AB 选区
-            if (pointA !== null && pointB !== null) {
-                const xA = timeToX(pointA);
-                const xB = timeToX(pointB);
-                const sx = Math.min(xA, xB);
-                const ex = Math.max(xA, xB);
+                    ctx.strokeStyle = '#f43f5e';
+                    ctx.beginPath();
+                    ctx.moveTo(xB, 0);
+                    ctx.lineTo(xB, canvasHeight);
+                    ctx.stroke();
 
-                const csx = Math.max(0, sx);
-                const cex = Math.min(vw, ex);
-                if (cex > csx) {
-                    octx.fillStyle = 'rgba(14, 165, 233, 0.22)';
-                    octx.fillRect(csx, 0, cex - csx, vh);
-                    octx.fillStyle = '#0284c7';
-                    octx.fillRect(csx, 0, cex - csx, 2);
-                    octx.fillRect(csx, vh - 2, cex - csx, 2);
+                    ctx.fillStyle = '#f43f5e';
+                    ctx.fillRect(xB - 5, 0, 10, 16);
+                    ctx.fillStyle = '#ffffff';
+                    ctx.font = 'bold 10px sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.fillText('B', xB, 12);
                 }
 
-                // A 线
-                if (xA >= -2 && xA <= vw + 2) {
-                    octx.strokeStyle = '#10b981';
-                    octx.lineWidth = 2;
-                    octx.beginPath();
-                    octx.moveTo(xA, 0);
-                    octx.lineTo(xA, vh);
-                    octx.stroke();
-                    octx.fillStyle = '#10b981';
-                    octx.fillRect(xA - 5, 0, 10, 16);
-                    octx.fillStyle = '#ffffff';
-                    octx.font = 'bold 10px sans-serif';
-                    octx.textAlign = 'center';
-                    octx.fillText('A', xA, 12);
-                }
-
-                // B 线
-                if (xB >= -2 && xB <= vw + 2) {
-                    octx.strokeStyle = '#f43f5e';
-                    octx.lineWidth = 2;
-                    octx.beginPath();
-                    octx.moveTo(xB, 0);
-                    octx.lineTo(xB, vh);
-                    octx.stroke();
-                    octx.fillStyle = '#f43f5e';
-                    octx.fillRect(xB - 5, 0, 10, 16);
-                    octx.fillStyle = '#ffffff';
-                    octx.font = 'bold 10px sans-serif';
-                    octx.textAlign = 'center';
-                    octx.fillText('B', xB, 12);
-                }
-            }
-
-            // 播放头
-            const px = timeToX(mainMedia.currentTime);
-            if (px >= -2 && px <= vw + 2) {
-                octx.strokeStyle = '#f59e0b';
-                octx.lineWidth = 2;
-                octx.beginPath();
-                octx.moveTo(px, 0);
-                octx.lineTo(px, vh);
-                octx.stroke();
+                const playX = (mainMedia.currentTime / duration) * canvasWidth;
+                ctx.strokeStyle = '#f59e0b';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(playX, 0);
+                ctx.lineTo(playX, canvasHeight);
+                ctx.stroke();
             }
         }
 
-        // --- 4. 画布尺寸与缩放 ---
-        function resizeCanvases() {
-            const cw = waveformScrollContainer.clientWidth || 800;
-            const ch = waveformScrollContainer.clientHeight || 120;
-            const maxZoom = Math.max(1, MAX_CANVAS_WIDTH / cw);
-            zoomLevel = Math.min(zoomLevel, maxZoom);
-
-            const canvasW = Math.max(1, Math.round(cw * zoomLevel));
-
-            waveformInner.style.width = canvasW + 'px';
-            waveformInner.style.height = ch + 'px';
-
-            if (staticCanvas.width !== canvasW || staticCanvas.height !== ch) {
-                staticCanvas.width = canvasW;
-                staticCanvas.height = ch;
-                staticCanvas.style.width = canvasW + 'px';
-                staticCanvas.style.height = ch + 'px';
-            }
-
-            if (overlayCanvas.width !== cw || overlayCanvas.height !== ch) {
-                overlayCanvas.width = cw;
-                overlayCanvas.height = ch;
-                overlayCanvas.style.width = cw + 'px';
-                overlayCanvas.style.height = ch + 'px';
-            }
-
-            zoomLevelDisplay.textContent = zoomLevel.toFixed(1) + 'x';
-        }
-
-        function setZoom(target) {
-            const cw = waveformScrollContainer.clientWidth || 800;
-            const maxZoom = Math.max(1, MAX_CANVAS_WIDTH / cw);
-            zoomLevel = Math.max(1, Math.min(target, maxZoom));
-            resizeCanvases();
-            renderStaticWaveform();
-            drawOverlay();
-        }
-
-        zoomInBtn.addEventListener('click', () => {
-            const next = zoomLevel < 10 ? zoomLevel + 1 : zoomLevel * 1.5;
-            setZoom(next);
-        });
-
-        zoomOutBtn.addEventListener('click', () => {
-            const next = zoomLevel <= 10 ? zoomLevel - 1 : zoomLevel / 1.5;
-            setZoom(next);
-        });
-
-        toggleAutoScrollBtn.addEventListener('click', () => {
-            isAutoScrollEnabled = !isAutoScrollEnabled;
-            autoScrollStatusText.textContent = isAutoScrollEnabled ? '开' : '关';
-            autoScrollStatusText.className = isAutoScrollEnabled ? 'text-emerald-400' : 'text-rose-400';
-        });
-
-        // --- 5. Media Player & Progress ---
+        // --- 2. Media Player & Progress Interactions ---
         mediaFileInput.addEventListener('change', (e) => {
             const file = e.target.files[0];
             if (file) {
@@ -543,103 +470,99 @@
             }
         });
 
-        playPauseBtn.addEventListener('click', togglePlay);
-        mainMedia.addEventListener('click', togglePlay);
-        audioPlaceholder.addEventListener('click', togglePlay);
-
-        mainMedia.addEventListener('play', () => {
-            playPauseBtn.innerHTML = '<i class="fa-solid fa-pause"></i>';
-        });
-        mainMedia.addEventListener('pause', () => {
-            playPauseBtn.innerHTML = '<i class="fa-solid fa-play"></i>';
-        });
+        playPauseBtn.addEventListener('click', () => { initAudioSmooth(); togglePlay(); });
+        mainMedia.addEventListener('click', () => { initAudioSmooth(); togglePlay(); });
+        audioPlaceholder.addEventListener('click', () => { initAudioSmooth(); togglePlay(); });
 
         function togglePlay() {
             if (mainMedia.paused) {
                 mainMedia.play();
+                playPauseBtn.innerHTML = '<i class="fa-solid fa-pause"></i>';
             } else {
                 mainMedia.pause();
+                playPauseBtn.innerHTML = '<i class="fa-solid fa-play"></i>';
             }
         }
 
-        muteBtn.addEventListener('click', () => {
-            mainMedia.muted = !mainMedia.muted;
-            muteBtn.innerHTML = mainMedia.muted
-                ? '<i class="fa-solid fa-volume-xmark"></i>'
-                : '<i class="fa-solid fa-volume-high"></i>';
+        mainMedia.addEventListener('timeupdate', () => {
+            const cur = mainMedia.currentTime;
+            const dur = mainMedia.duration || 0;
+
+            currentTimeDisplay.textContent = `${formatTime(cur)} / ${formatTime(dur)}`;
+            mediaProgressBar.value = dur ? (cur / dur) * 100 : 0;
+
+            // Strict AB Loop Check with Micro-Fade Smoothing to Eliminate Pop Noise
+            if (isLooping && pointA !== null && pointB !== null && pointA < pointB) {
+                if (cur >= pointB || cur < pointA) {
+                    smoothJumpTo(pointA);
+                }
+            }
+
+            if (isAutoScrollEnabled && zoomLevel > 1.0 && dur > 0) {
+                const canvasWidth = waveformCanvas.width;
+                const playX = (cur / dur) * canvasWidth;
+                const containerWidth = waveformScrollContainer.clientWidth;
+                waveformScrollContainer.scrollLeft = playX - containerWidth / 2;
+            }
+
+            drawWaveform();
         });
 
         mediaProgressBar.addEventListener('input', (e) => {
             const dur = mainMedia.duration || 0;
             if (dur) {
-                mainMedia.currentTime = (e.target.value / 100) * dur;
+                initAudioSmooth();
+                smoothJumpTo((e.target.value / 100) * dur);
             }
         });
 
-        // --- 6. 主循环：用 requestAnimationFrame 精准处理 AB 循环与 UI ---
-        function tick() {
-            const cur = mainMedia.currentTime;
-            const dur = mainMedia.duration || 0;
+        // --- 3. Waveform Zoom & Mouse Selection ---
+        zoomInBtn.addEventListener('click', () => {
+            zoomLevel = Math.min(20.0, zoomLevel + 1.0);
+            zoomLevelDisplay.textContent = zoomLevel.toFixed(1) + 'x';
+            drawWaveform();
+        });
 
-            if (dur > 0 && isFinite(dur)) {
-                // AB 循环检测（60fps 精度，远优于 timeupdate 的 250ms）
-                if (isLooping && !isLoopSeeking && pointA !== null && pointB !== null && pointA < pointB) {
-                    if (cur >= pointB || cur < pointA - 0.15) {
-                        isLoopSeeking = true;
-                        const prevVol = mainMedia.volume;
-                        // 短暂静音，抑制 seek 瞬间的“刺啦”爆音
-                        mainMedia.volume = 0;
-                        mainMedia.currentTime = Math.max(0, pointA);
-                        setTimeout(() => {
-                            mainMedia.volume = prevVol;
-                            isLoopSeeking = false;
-                        }, 40);
-                    }
-                }
+        zoomOutBtn.addEventListener('click', () => {
+            zoomLevel = Math.max(1.0, zoomLevel - 1.0);
+            zoomLevelDisplay.textContent = zoomLevel.toFixed(1) + 'x';
+            drawWaveform();
+        });
 
-                currentTimeDisplay.textContent = `${formatTime(cur)} / ${formatTime(dur)}`;
-                mediaProgressBar.value = (cur / dur) * 100;
+        toggleAutoScrollBtn.addEventListener('click', () => {
+            isAutoScrollEnabled = !isAutoScrollEnabled;
+            autoScrollStatusText.textContent = isAutoScrollEnabled ? '开' : '关';
+            autoScrollStatusText.className = isAutoScrollEnabled ? 'text-emerald-400' : 'text-rose-400';
+        });
 
-                // 波形跟随
-                if (isAutoScrollEnabled && zoomLevel > 1.0) {
-                    const w = staticCanvas.width;
-                    const px = (cur / dur) * w;
-                    const cw = waveformScrollContainer.clientWidth;
-                    waveformScrollContainer.scrollLeft = px - cw / 2;
-                }
-            }
-
-            drawOverlay();
-            requestAnimationFrame(tick);
-        }
-
-        // --- 7. 鼠标选择 A-B ---
-        waveformScrollContainer.addEventListener('mousedown', (e) => {
-            const rect = waveformInner.getBoundingClientRect();
-            if (e.clientY < rect.top || e.clientY > rect.bottom) return;
-            const clickX = e.clientX - rect.left;
-            const w = staticCanvas.width;
-            if (clickX < 0 || clickX > w || w <= 0) return;
-
+        waveformCanvas.addEventListener('mousedown', (e) => {
+            initAudioSmooth();
             isMouseDown = true;
             dragStartX = e.clientX;
-
+            const rect = waveformCanvas.getBoundingClientRect();
+            const clickX = e.clientX - rect.left;
             const duration = mainMedia.duration || 0;
             if (!duration) return;
 
-            const clickTime = (clickX / w) * duration;
+            const clickTime = (clickX / waveformCanvas.width) * duration;
 
             if (pointA !== null && pointB !== null) {
-                const xA = (pointA / duration) * w;
-                const xB = (pointB / duration) * w;
+                const xA = (pointA / duration) * waveformCanvas.width;
+                const xB = (pointB / duration) * waveformCanvas.width;
 
-                if (Math.abs(clickX - xA) < 12) { dragMode = 'A'; return; }
-                if (Math.abs(clickX - xB) < 12) { dragMode = 'B'; return; }
+                if (Math.abs(clickX - xA) < 12) {
+                    dragMode = 'A';
+                    return;
+                }
+                if (Math.abs(clickX - xB) < 12) {
+                    dragMode = 'B';
+                    return;
+                }
                 if (clickX > Math.min(xA, xB) && clickX < Math.max(xA, xB)) {
                     dragMode = 'RANGE';
                     dragOffsetTimeA = clickTime - pointA;
                     dragRangeDuration = pointB - pointA;
-                    waveformScrollContainer.style.cursor = 'grabbing';
+                    waveformCanvas.style.cursor = 'grabbing';
                     return;
                 }
             }
@@ -650,25 +573,23 @@
         });
 
         window.addEventListener('mousemove', (e) => {
-            const rect = waveformInner.getBoundingClientRect();
-            const w = staticCanvas.width;
+            const rect = waveformCanvas.getBoundingClientRect();
+            const currentX = Math.max(0, Math.min(e.clientX - rect.left, waveformCanvas.width));
             const duration = mainMedia.duration || 0;
-            if (!duration || w <= 0) return;
 
-            const rawX = e.clientX - rect.left;
-            const x = Math.max(0, Math.min(rawX, w));
-            const currentTime = (x / w) * duration;
+            if (!duration) return;
 
-            // 悬停光标
+            const currentTime = (currentX / waveformCanvas.width) * duration;
+
             if (!isMouseDown && pointA !== null && pointB !== null) {
-                const xA = (pointA / duration) * w;
-                const xB = (pointB / duration) * w;
-                if (Math.abs(rawX - xA) < 12 || Math.abs(rawX - xB) < 12) {
-                    waveformScrollContainer.style.cursor = 'col-resize';
-                } else if (rawX > Math.min(xA, xB) && rawX < Math.max(xA, xB)) {
-                    waveformScrollContainer.style.cursor = 'grab';
+                const xA = (pointA / duration) * waveformCanvas.width;
+                const xB = (pointB / duration) * waveformCanvas.width;
+                if (Math.abs(currentX - xA) < 12 || Math.abs(currentX - xB) < 12) {
+                    waveformCanvas.style.cursor = 'col-resize';
+                } else if (currentX > Math.min(xA, xB) && currentX < Math.max(xA, xB)) {
+                    waveformCanvas.style.cursor = 'grab';
                 } else {
-                    waveformScrollContainer.style.cursor = 'crosshair';
+                    waveformCanvas.style.cursor = 'crosshair';
                 }
             }
 
@@ -691,7 +612,7 @@
 
             enforceABConstraint();
             updateABInputs();
-            drawOverlay();
+            drawWaveform();
         });
 
         window.addEventListener('mouseup', (e) => {
@@ -699,28 +620,26 @@
             const duration = mainMedia.duration || 0;
             const moveDist = Math.abs(e.clientX - dragStartX);
 
-            // 单击（未拖动）：A 点落在点击处，B 点为 A+1 秒
             if (dragMode === 'SELECT' && moveDist < 5) {
-                const rect = waveformInner.getBoundingClientRect();
-                const w = staticCanvas.width;
-                const clickX = Math.max(0, Math.min(e.clientX - rect.left, w));
-                if (duration > 0 && w > 0) {
-                    const clickTime = (clickX / w) * duration;
-                    pointA = Math.max(0, Math.min(clickTime, duration - 0.1));
-                    pointB = Math.min(duration, pointA + 1.0);
-                    mainMedia.currentTime = pointA;
+                const rect = waveformCanvas.getBoundingClientRect();
+                const clickX = e.clientX - rect.left;
+                if (duration > 0) {
+                    const clickTime = (clickX / waveformCanvas.width) * duration;
+                    pointA = clickTime;
+                    pointB = Math.min(duration, clickTime + 1.0);
+                    smoothJumpTo(clickTime);
                 }
             }
 
             if (dragMode === 'RANGE') {
-                waveformScrollContainer.style.cursor = 'grab';
+                waveformCanvas.style.cursor = 'grab';
             }
 
             isMouseDown = false;
             dragMode = null;
             enforceABConstraint();
             updateABInputs();
-            drawOverlay();
+            drawWaveform();
         });
 
         function enforceABConstraint() {
@@ -736,7 +655,7 @@
             }
         }
 
-        // --- 8. AB 控制按钮 ---
+        // AB Control Buttons
         toggleLoopBtn.addEventListener('click', () => {
             isLooping = !isLooping;
             loopStatusText.textContent = isLooping ? '开' : '关';
@@ -750,7 +669,7 @@
             loopStatusText.textContent = '关';
             loopStatusText.className = 'text-rose-400';
             updateABInputs();
-            drawOverlay();
+            drawWaveform();
         });
 
         function updateABInputs() {
@@ -758,29 +677,30 @@
             inputTimeB.value = pointB !== null ? pointB.toFixed(1) : '0.0';
         }
 
-        inputTimeA.addEventListener('change', () => {
-            pointA = parseFloat(inputTimeA.value) || 0;
+        inputTimeA.addEventListener('change', () => { 
+            pointA = parseFloat(inputTimeA.value) || 0; 
             enforceABConstraint();
             updateABInputs();
-            drawOverlay();
+            drawWaveform(); 
         });
 
-        inputTimeB.addEventListener('change', () => {
-            pointB = parseFloat(inputTimeB.value) || 0;
+        inputTimeB.addEventListener('change', () => { 
+            pointB = parseFloat(inputTimeB.value) || 0; 
             enforceABConstraint();
             updateABInputs();
-            drawOverlay();
+            drawWaveform(); 
         });
 
-        aMinusBtn.addEventListener('click', () => { if (pointA !== null) { pointA = Math.max(0, pointA - 0.1); enforceABConstraint(); updateABInputs(); drawOverlay(); } });
-        aPlusBtn.addEventListener('click', () => { if (pointA !== null) { pointA += 0.1; enforceABConstraint(); updateABInputs(); drawOverlay(); } });
-        bMinusBtn.addEventListener('click', () => { if (pointB !== null) { pointB = Math.max(pointA + 0.1, pointB - 0.1); enforceABConstraint(); updateABInputs(); drawOverlay(); } });
-        bPlusBtn.addEventListener('click', () => { if (pointB !== null) { pointB += 0.1; enforceABConstraint(); updateABInputs(); drawOverlay(); } });
+        aMinusBtn.addEventListener('click', () => { if (pointA !== null) { pointA = Math.max(0, pointA - 0.1); enforceABConstraint(); updateABInputs(); drawWaveform(); } });
+        aPlusBtn.addEventListener('click', () => { if (pointA !== null) { pointA += 0.1; enforceABConstraint(); updateABInputs(); drawWaveform(); } });
+        bMinusBtn.addEventListener('click', () => { if (pointB !== null) { pointB = Math.max(pointA + 0.1, pointB - 0.1); enforceABConstraint(); updateABInputs(); drawWaveform(); } });
+        bPlusBtn.addEventListener('click', () => { if (pointB !== null) { pointB += 0.1; enforceABConstraint(); updateABInputs(); drawWaveform(); } });
 
-        // --- 9. 快捷键 ---
+        // --- 4. Global Shortcuts ---
         window.addEventListener('keydown', (e) => {
             if (e.code === 'Space' && document.activeElement !== noteTextarea && document.activeElement.tagName !== 'INPUT') {
                 e.preventDefault();
+                initAudioSmooth();
                 togglePlay();
             }
             if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
@@ -789,7 +709,7 @@
             }
         });
 
-        // --- 10. 文件保存逻辑 ---
+        // --- 5. Direct File Saving with Real-Time Local Timestamp ---
         openNativeFileBtn.addEventListener('click', async () => {
             if ('showOpenFilePicker' in window) {
                 try {
@@ -802,7 +722,7 @@
                     noteTextarea.value = text;
                     saveLocalBackup();
                     wordCountText.textContent = `${text.length} 字`;
-
+                    
                     const timeNow = new Date().toLocaleTimeString();
                     saveStateText.textContent = `已成功绑定原文件: ${handle.name} (${timeNow})`;
                     saveStateText.className = 'text-emerald-400 font-semibold';
@@ -824,6 +744,7 @@
                     const writable = await currentFileHandle.createWritable();
                     await writable.write(content);
                     await writable.close();
+                    
                     saveStateText.textContent = `已于 ${timeNow} 成功保存至: ${currentFileHandle.name}`;
                     saveStateText.className = 'text-emerald-400 font-semibold';
                     return;
@@ -841,6 +762,7 @@
                     const writable = await currentFileHandle.createWritable();
                     await writable.write(content);
                     await writable.close();
+                    
                     saveStateText.textContent = `已绑定并于 ${timeNow} 成功保存至: ${currentFileHandle.name}`;
                     saveStateText.className = 'text-emerald-400 font-semibold';
                     saveBtnText.textContent = '覆写保存 (⌘S)';
@@ -890,13 +812,14 @@
             saveLocalBackup();
         });
 
+        // Load Stored Backup
         const savedNote = localStorage.getItem('studio_note_backup');
         if (savedNote) {
             noteTextarea.value = savedNote;
             wordCountText.textContent = `${savedNote.length} 字`;
         }
 
-        // --- 11. 面板拖拽调整 ---
+        // --- 6. Resizable Panels Logic ---
         let isResizingWaveform = false;
         waveformResizer.addEventListener('mousedown', () => { isResizingWaveform = true; });
 
@@ -909,9 +832,7 @@
                 const newHeight = containerRect.bottom - e.clientY;
                 if (newHeight > 100 && newHeight < containerRect.height - 150) {
                     waveformBox.style.height = `${newHeight}px`;
-                    resizeCanvases();
-                    renderStaticWaveform();
-                    drawOverlay();
+                    drawWaveform();
                 }
             }
 
@@ -920,9 +841,7 @@
                 const newWidth = containerWidth - e.clientX;
                 if (newWidth > 280 && newWidth < containerWidth - 350) {
                     rightPanel.style.width = `${newWidth}px`;
-                    resizeCanvases();
-                    renderStaticWaveform();
-                    drawOverlay();
+                    drawWaveform();
                 }
             }
         });
@@ -932,34 +851,19 @@
             isResizingPanel = false;
         });
 
-        // --- 12. 时间格式化 ---
+        // Helper: Format Seconds to MM:SS.s
         function formatTime(seconds) {
-            if (!isFinite(seconds)) return '00:00.0';
-            const total = Math.max(0, seconds);
-            const m = Math.floor(total / 60);
-            const s = total - m * 60;
-            if (s >= 59.95) return `${String(m + 1).padStart(2, '0')}:00.0`;
-            return `${String(m).padStart(2, '0')}:${s.toFixed(1).padStart(4, '0')}`;
+            if (isNaN(seconds)) return '00:00.0';
+            const m = Math.floor(seconds / 60);
+            const s = (seconds % 60).toFixed(1);
+            const mStr = m < 10 ? '0' + m : m;
+            const sStr = s < 10 ? '0' + s : s;
+            return `${mStr}:${sStr}`;
         }
 
-        // --- 13. 初始化 ---
-        function initializeLayout() {
-            resizeCanvases();
-            renderStaticWaveform();
-            drawOverlay();
-        }
-
-        window.addEventListener('resize', () => {
-            resizeCanvases();
-            renderStaticWaveform();
-            drawOverlay();
-        });
-
-        // 等待字体/布局稳定后初始化
-        requestAnimationFrame(() => {
-            initializeLayout();
-            requestAnimationFrame(tick);
-        });
+        // Initial Canvas Draw
+        window.addEventListener('resize', drawWaveform);
+        drawWaveform();
     </script>
 </body>
 </html>
