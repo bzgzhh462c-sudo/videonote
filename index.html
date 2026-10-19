@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AudioVisualizer Studio - 视频分析与笔记工作站</title>
+    <title>AudioVisualizer Studio Pro - 视频分析与笔记工作站</title>
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -80,20 +80,20 @@
             </label>
             <div class="h-4 w-px bg-slate-700"></div>
             <!-- Save to File Btn -->
-            <button id="saveNoteBtn" class="bg-emerald-700 hover:bg-emerald-600 text-white font-medium px-3 py-1.5 rounded-md border border-emerald-600 flex items-center space-x-1.5 transition" title="直接覆盖保存到原文件 (Ctrl+S)">
+            <button id="saveNoteBtn" class="bg-emerald-700 hover:bg-emerald-600 text-white font-medium px-3 py-1.5 rounded-md border border-emerald-600 flex items-center space-x-1.5 transition" title="直接覆盖保存到已绑定文件 (Cmd/Ctrl+S)">
                 <i class="fa-solid fa-floppy-disk"></i>
-                <span id="saveBtnText">保存笔记</span>
+                <span id="saveBtnText">保存笔记 (⌘S)</span>
             </button>
             <!-- Save As Btn -->
             <button id="saveAsNoteBtn" class="bg-slate-800 hover:bg-slate-700 text-slate-200 px-2.5 py-1.5 rounded-md border border-slate-700 flex items-center space-x-1 transition" title="另存为新文件">
                 <i class="fa-solid fa-file-export text-sky-400"></i>
                 <span>另存为...</span>
             </button>
-            <label class="cursor-pointer bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-md border border-slate-700 flex items-center space-x-1.5 transition">
+            <!-- Native Open File Button (Gives Write Permission) -->
+            <button id="openNativeFileBtn" class="bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-md border border-slate-700 flex items-center space-x-1.5 transition" title="打开本地笔记文件并开启直接覆盖权限">
                 <i class="fa-solid fa-file-import text-amber-400"></i>
-                <span>打开笔记文件</span>
-                <input type="file" id="importNoteInput" accept=".md,.txt" class="hidden">
-            </label>
+                <span>打开/绑定本地文件</span>
+            </button>
         </div>
     </header>
 
@@ -180,7 +180,7 @@
                         <button id="aMinusBtn" class="px-1.5 py-0.5 bg-slate-800 rounded hover:bg-slate-700">-0.1s</button>
                         <button id="aPlusBtn" class="px-1.5 py-0.5 bg-slate-800 rounded hover:bg-slate-700">+0.1s</button>
                     </div>
-                    <div class="text-slate-500 text-[10px]">按住波形长按拖拽可直接划定 AB 选区</div>
+                    <div class="text-slate-500 text-[10px]">按住 A-B 中间区域可整体平移选区</div>
                     <div class="flex items-center space-x-2">
                         <span class="text-rose-400">B 点:</span>
                         <input type="number" id="inputTimeB" step="0.1" min="0" value="0.0" class="w-16 bg-slate-950 border border-slate-700 rounded px-1 text-rose-400">
@@ -211,7 +211,7 @@
 
             <!-- Speech Output Box -->
             <div id="transcriptBox" class="h-32 bg-slate-950 p-3 overflow-y-auto border-b border-slate-800 text-xs space-y-1.5 font-sans">
-                <div class="text-slate-500 italic">视频播放时开启转写，听到内容将实时输出带时间戳字幕...</div>
+                <div class="text-slate-500 italic">点击“开启识别”后播放视频，将实时输出带时间戳字幕...</div>
             </div>
 
             <!-- Note Editor Header -->
@@ -233,7 +233,7 @@
 
             <!-- Note Status Footer -->
             <div class="h-7 bg-slate-950 border-t border-slate-800 px-3 flex items-center justify-between text-[11px] text-slate-500">
-                <span id="saveStateText">未绑定本地文件（已在本地浏览器暂存）</span>
+                <span id="saveStateText" class="text-amber-400/80">未绑定文件（首次保存将要求选择一次保存路径）</span>
                 <span id="wordCountText">0 字</span>
             </div>
         </div>
@@ -275,7 +275,7 @@
         const saveNoteBtn = document.getElementById('saveNoteBtn');
         const saveBtnText = document.getElementById('saveBtnText');
         const saveAsNoteBtn = document.getElementById('saveAsNoteBtn');
-        const importNoteInput = document.getElementById('importNoteInput');
+        const openNativeFileBtn = document.getElementById('openNativeFileBtn');
         const insertTimestampBtn = document.getElementById('insertTimestampBtn');
         const saveStateText = document.getElementById('saveStateText');
         const wordCountText = document.getElementById('wordCountText');
@@ -298,8 +298,11 @@
         let pointA = null;
         let pointB = null;
         let isLooping = false;
-        let isDraggingAB = null; // 'A' or 'B' or 'SELECT'
-        let fileHandle = null; // System File Handle for Native Direct Saving
+        let isDraggingAB = null; // 'A', 'B', 'RANGE', 'SELECT'
+        let dragOffsetTimeA = 0;
+        let dragOffsetTimeB = 0;
+        let dragRangeDuration = 0;
+        let currentFileHandle = null;
 
         // Speech Recognition State
         let recognition = null;
@@ -328,7 +331,7 @@
             waveformCanvas.height = canvasHeight;
 
             // Clear Background
-            ctx.fillStyle = '#020617'; // slate-950
+            ctx.fillStyle = '#020617';
             ctx.fillRect(0, 0, canvasWidth, canvasHeight);
 
             if (!audioBuffer) {
@@ -344,7 +347,7 @@
             const step = Math.ceil(totalSamples / canvasWidth);
             const midY = canvasHeight / 2;
 
-            // Calculate Peaks & Normalize Amplitude to Fill Container
+            // Calculate Peaks & Normalize Amplitude
             let maxAmp = 0;
             const peaks = new Float32Array(canvasWidth);
             for (let i = 0; i < canvasWidth; i++) {
@@ -363,7 +366,7 @@
             const scale = maxAmp > 0 ? (midY * 0.85) / maxAmp : midY * 0.85;
 
             // Draw Clean Normalized Waveform Paths
-            ctx.fillStyle = '#38bdf8'; // sky-400
+            ctx.fillStyle = '#38bdf8';
             for (let i = 0; i < canvasWidth; i++) {
                 const h = peaks[i] * scale;
                 ctx.fillRect(i, midY - h, 1, h * 2 || 1);
@@ -386,11 +389,16 @@
                     const endX = Math.max(xA, xB);
 
                     // Highlight Range
-                    ctx.fillStyle = 'rgba(14, 165, 233, 0.2)';
+                    ctx.fillStyle = 'rgba(14, 165, 233, 0.25)';
                     ctx.fillRect(startX, 0, endX - startX, canvasHeight);
 
+                    // Border top and bottom for range box
+                    ctx.fillStyle = '#0284c7';
+                    ctx.fillRect(startX, 0, endX - startX, 2);
+                    ctx.fillRect(startX, canvasHeight - 2, endX - startX, 2);
+
                     // Line A
-                    ctx.strokeStyle = '#10b981'; // emerald-500
+                    ctx.strokeStyle = '#10b981';
                     ctx.lineWidth = 2;
                     ctx.beginPath();
                     ctx.moveTo(xA, 0);
@@ -399,14 +407,14 @@
 
                     // Handle A
                     ctx.fillStyle = '#10b981';
-                    ctx.fillRect(xA - 4, 0, 8, 14);
+                    ctx.fillRect(xA - 5, 0, 10, 16);
                     ctx.fillStyle = '#ffffff';
-                    ctx.font = '9px sans-serif';
+                    ctx.font = 'bold 10px sans-serif';
                     ctx.textAlign = 'center';
-                    ctx.fillText('A', xA, 11);
+                    ctx.fillText('A', xA, 12);
 
                     // Line B
-                    ctx.strokeStyle = '#f43f5e'; // rose-500
+                    ctx.strokeStyle = '#f43f5e';
                     ctx.beginPath();
                     ctx.moveTo(xB, 0);
                     ctx.lineTo(xB, canvasHeight);
@@ -414,16 +422,16 @@
 
                     // Handle B
                     ctx.fillStyle = '#f43f5e';
-                    ctx.fillRect(xB - 4, 0, 8, 14);
+                    ctx.fillRect(xB - 5, 0, 10, 16);
                     ctx.fillStyle = '#ffffff';
-                    ctx.font = '9px sans-serif';
+                    ctx.font = 'bold 10px sans-serif';
                     ctx.textAlign = 'center';
-                    ctx.fillText('B', xB, 11);
+                    ctx.fillText('B', xB, 12);
                 }
 
                 // Draw Current Playhead Indicator
                 const playX = (mainVideo.currentTime / duration) * canvasWidth;
-                ctx.strokeStyle = '#f59e0b'; // amber-500
+                ctx.strokeStyle = '#f59e0b';
                 ctx.lineWidth = 2;
                 ctx.beginPath();
                 ctx.moveTo(playX, 0);
@@ -459,20 +467,17 @@
             const cur = mainVideo.currentTime;
             const dur = mainVideo.duration || 0;
 
-            // Format Time
             currentTimeDisplay.textContent = `${formatTime(cur)} / ${formatTime(dur)}`;
             videoProgressBar.value = dur ? (cur / dur) * 100 : 0;
 
-            // AB Loop Logic
-            if (isLooping && pointA !== null && pointB !== null) {
-                const minAB = Math.min(pointA, pointB);
-                const maxAB = Math.max(pointA, pointB);
-                if (cur >= maxAB || cur < minAB) {
-                    mainVideo.currentTime = minAB;
+            // Strict AB Loop Check
+            if (isLooping && pointA !== null && pointB !== null && pointA < pointB) {
+                if (cur >= pointB || cur < pointA) {
+                    mainVideo.currentTime = pointA;
                 }
             }
 
-            // Auto-scroll Waveform Container to Follow Playhead (Controlled by Switch)
+            // Auto-scroll Waveform Container
             if (isAutoScrollEnabled && zoomLevel > 1.0 && dur > 0) {
                 const canvasWidth = waveformCanvas.width;
                 const playX = (cur / dur) * canvasWidth;
@@ -490,7 +495,7 @@
             }
         });
 
-        // --- 3. Waveform Zoom, AutoScroll Toggle & Drag AB Selection ---
+        // --- 3. Waveform Zoom, AutoScroll & AB Dragging Logic ---
         zoomInBtn.addEventListener('click', () => {
             zoomLevel = Math.min(20.0, zoomLevel + 1.0);
             zoomLevelDisplay.textContent = zoomLevel.toFixed(1) + 'x';
@@ -521,64 +526,120 @@
                 const xA = (pointA / duration) * waveformCanvas.width;
                 const xB = (pointB / duration) * waveformCanvas.width;
 
-                if (Math.abs(clickX - xA) < 10) {
+                // Drag Handle A
+                if (Math.abs(clickX - xA) < 12) {
                     isDraggingAB = 'A';
                     return;
                 }
-                if (Math.abs(clickX - xB) < 10) {
+                // Drag Handle B
+                if (Math.abs(clickX - xB) < 12) {
                     isDraggingAB = 'B';
+                    return;
+                }
+                // Drag Range Area (Between A and B)
+                if (clickX > Math.min(xA, xB) && clickX < Math.max(xA, xB)) {
+                    isDraggingAB = 'RANGE';
+                    dragOffsetTimeA = clickTime - pointA;
+                    dragRangeDuration = pointB - pointA;
+                    waveformCanvas.style.cursor = 'grabbing';
                     return;
                 }
             }
 
-            // Otherwise, Start Drag-Selecting
+            // Single Drag-Select New Range
             isDraggingAB = 'SELECT';
             pointA = clickTime;
             pointB = clickTime;
+            enforceABConstraint();
             updateABInputs();
             drawWaveform();
         });
 
         window.addEventListener('mousemove', (e) => {
-            if (!isDraggingAB) return;
             const rect = waveformCanvas.getBoundingClientRect();
             const currentX = Math.max(0, Math.min(e.clientX - rect.left, waveformCanvas.width));
             const duration = mainVideo.duration || 0;
+
             if (!duration) return;
 
             const currentTime = (currentX / waveformCanvas.width) * duration;
 
+            // Update Cursor Style on Hover
+            if (!isDraggingAB && pointA !== null && pointB !== null) {
+                const xA = (pointA / duration) * waveformCanvas.width;
+                const xB = (pointB / duration) * waveformCanvas.width;
+                if (Math.abs(currentX - xA) < 12 || Math.abs(currentX - xB) < 12) {
+                    waveformCanvas.style.cursor = 'col-resize';
+                } else if (currentX > Math.min(xA, xB) && currentX < Math.max(xA, xB)) {
+                    waveformCanvas.style.cursor = 'grab';
+                } else {
+                    waveformCanvas.style.cursor = 'crosshair';
+                }
+            }
+
+            if (!isDraggingAB) return;
+
             if (isDraggingAB === 'A') {
-                pointA = currentTime;
+                pointA = Math.min(currentTime, pointB - 0.1);
             } else if (isDraggingAB === 'B') {
-                pointB = currentTime;
+                pointB = Math.max(currentTime, pointA + 0.1);
+            } else if (isDraggingAB === 'RANGE') {
+                let newA = currentTime - dragOffsetTimeA;
+                if (newA < 0) newA = 0;
+                if (newA + dragRangeDuration > duration) newA = duration - dragRangeDuration;
+                pointA = newA;
+                pointB = newA + dragRangeDuration;
             } else if (isDraggingAB === 'SELECT') {
                 pointB = currentTime;
             }
 
+            enforceABConstraint();
             updateABInputs();
             drawWaveform();
         });
 
         window.addEventListener('mouseup', () => {
             if (isDraggingAB === 'SELECT') {
-                if (Math.abs(pointA - pointB) < 0.2) {
-                    // Single click jump
+                if (Math.abs(pointA - pointB) < 0.15) {
                     mainVideo.currentTime = pointA;
                 }
             }
+            if (isDraggingAB === 'RANGE') {
+                waveformCanvas.style.cursor = 'grab';
+            }
             isDraggingAB = null;
+            enforceABConstraint();
+            updateABInputs();
+            drawWaveform();
         });
 
-        // AB Points Control Buttons
+        // Strict Constraint: Point B CANNOT be smaller than Point A
+        function enforceABConstraint() {
+            if (pointA !== null && pointB !== null) {
+                if (pointB < pointA) {
+                    const temp = pointA;
+                    pointA = pointB;
+                    pointB = temp;
+                }
+                if (pointB - pointA < 0.1) {
+                    pointB = pointA + 0.1;
+                }
+            }
+        }
+
+        // AB Control Buttons
         setPointABtn.addEventListener('click', () => {
             pointA = mainVideo.currentTime;
+            if (pointB === null || pointB <= pointA) pointB = pointA + 1.0;
+            enforceABConstraint();
             updateABInputs();
             drawWaveform();
         });
 
         setPointBBtn.addEventListener('click', () => {
             pointB = mainVideo.currentTime;
+            if (pointA === null || pointA >= pointB) pointA = Math.max(0, pointB - 1.0);
+            enforceABConstraint();
             updateABInputs();
             drawWaveform();
         });
@@ -604,14 +665,26 @@
             inputTimeB.value = pointB !== null ? pointB.toFixed(1) : '0.0';
         }
 
-        inputTimeA.addEventListener('change', () => { pointA = parseFloat(inputTimeA.value) || 0; drawWaveform(); });
-        inputTimeB.addEventListener('change', () => { pointB = parseFloat(inputTimeB.value) || 0; drawWaveform(); });
-        aMinusBtn.addEventListener('click', () => { if (pointA !== null) { pointA = Math.max(0, pointA - 0.1); updateABInputs(); drawWaveform(); } });
-        aPlusBtn.addEventListener('click', () => { if (pointA !== null) { pointA += 0.1; updateABInputs(); drawWaveform(); } });
-        bMinusBtn.addEventListener('click', () => { if (pointB !== null) { pointB = Math.max(0, pointB - 0.1); updateABInputs(); drawWaveform(); } });
-        bPlusBtn.addEventListener('click', () => { if (pointB !== null) { pointB += 0.1; updateABInputs(); drawWaveform(); } });
+        inputTimeA.addEventListener('change', () => { 
+            pointA = parseFloat(inputTimeA.value) || 0; 
+            enforceABConstraint();
+            updateABInputs();
+            drawWaveform(); 
+        });
 
-        // --- 4. Global Shortcuts (Space / Save Ctrl+S) ---
+        inputTimeB.addEventListener('change', () => { 
+            pointB = parseFloat(inputTimeB.value) || 0; 
+            enforceABConstraint();
+            updateABInputs();
+            drawWaveform(); 
+        });
+
+        aMinusBtn.addEventListener('click', () => { if (pointA !== null) { pointA = Math.max(0, pointA - 0.1); enforceABConstraint(); updateABInputs(); drawWaveform(); } });
+        aPlusBtn.addEventListener('click', () => { if (pointA !== null) { pointA += 0.1; enforceABConstraint(); updateABInputs(); drawWaveform(); } });
+        bMinusBtn.addEventListener('click', () => { if (pointB !== null) { pointB = Math.max(pointA + 0.1, pointB - 0.1); updateABInputs(); drawWaveform(); } });
+        bPlusBtn.addEventListener('click', () => { if (pointB !== null) { pointB += 0.1; enforceABConstraint(); updateABInputs(); drawWaveform(); } });
+
+        // --- 4. Global Shortcuts (Space & Cmd/Ctrl+S) ---
         window.addEventListener('keydown', (e) => {
             if (e.code === 'Space' && document.activeElement !== noteTextarea && document.activeElement.tagName !== 'INPUT') {
                 e.preventDefault();
@@ -631,34 +704,53 @@
             recognition.interimResults = true;
             recognition.lang = 'zh-CN';
 
+            let interimSpan = null;
+
             recognition.onresult = (event) => {
+                let interimTranscript = '';
                 for (let i = event.resultIndex; i < event.results.length; ++i) {
                     if (event.results[i].isFinal) {
                         const finalText = event.results[i][0].transcript;
+                        if (interimSpan) { interimSpan.remove(); interimSpan = null; }
                         appendTranscript(finalText);
+                    } else {
+                        interimTranscript += event.results[i][0].transcript;
                     }
+                }
+                if (interimTranscript) {
+                    if (!interimSpan) {
+                        interimSpan = document.createElement('div');
+                        interimSpan.className = 'text-amber-400/70 italic text-[11px] p-1';
+                        transcriptBox.appendChild(interimSpan);
+                    }
+                    interimSpan.textContent = `[实时识别中...]: ${interimTranscript}`;
+                    transcriptBox.scrollTop = transcriptBox.scrollHeight;
                 }
             };
 
             recognition.onerror = (err) => {
-                console.warn('语音识别事件:', err.error);
+                console.warn('语音识别状态:', err.error);
             };
 
             recognition.onend = () => {
-                if (isTranscribing) recognition.start();
+                if (isTranscribing) {
+                    try { recognition.start(); } catch(e){}
+                }
             };
         }
 
         toggleSttBtn.addEventListener('click', () => {
             if (!recognition) {
-                alert('您的浏览器暂不支持 Web Speech 语音识别接口，请使用最新版 Chrome 或 Edge 浏览器。');
+                alert('您的浏览器暂不支持 Web Speech 语音转写服务，请选择 Chrome 或 Edge 浏览器打开。');
                 return;
             }
             isTranscribing = !isTranscribing;
             if (isTranscribing) {
-                recognition.start();
-                sttStatusText.textContent = '识别中...';
-                toggleSttBtn.className = 'px-2.5 py-1 bg-rose-600 hover:bg-rose-500 text-white rounded text-xs flex items-center space-x-1.5 transition';
+                try {
+                    recognition.start();
+                    sttStatusText.textContent = '识别中...';
+                    toggleSttBtn.className = 'px-2.5 py-1 bg-rose-600 hover:bg-rose-500 text-white rounded text-xs flex items-center space-x-1.5 transition';
+                } catch(e) {}
             } else {
                 recognition.stop();
                 sttStatusText.textContent = '开启识别';
@@ -667,12 +759,13 @@
         });
 
         function appendTranscript(text) {
+            if (!text.trim()) return;
             const timeStr = formatTime(mainVideo.currentTime);
             const item = document.createElement('div');
             item.className = 'flex items-start space-x-1.5 hover:bg-slate-900 p-1 rounded group cursor-pointer';
             item.innerHTML = `
-                <span class="text-sky-400 font-mono text-[11px] hover:underline">${timeStr}</span>
-                <span class="text-slate-300 flex-1">${text}</span>
+                <span class="text-sky-400 font-mono text-[11px] hover:underline shrink-0">${timeStr}</span>
+                <span class="text-slate-200 flex-1">${text}</span>
             `;
             item.querySelector('span').addEventListener('click', () => {
                 const parts = timeStr.split(':');
@@ -683,61 +776,70 @@
             transcriptBox.scrollTop = transcriptBox.scrollHeight;
         }
 
-        // --- 6. Notes Management & Direct File Handle Saving ---
-        insertTimestampBtn.addEventListener('click', () => {
-            const timeStr = `[${formatTime(mainVideo.currentTime)}] `;
-            const start = noteTextarea.selectionStart;
-            const end = noteTextarea.selectionEnd;
-            const text = noteTextarea.value;
-            noteTextarea.value = text.substring(0, start) + timeStr + text.substring(end);
-            noteTextarea.selectionStart = noteTextarea.selectionEnd = start + timeStr.length;
-            noteTextarea.focus();
-            saveLocalBackup();
+        // --- 6. Direct File Saving with Real-Time Local Timestamp ---
+        openNativeFileBtn.addEventListener('click', async () => {
+            if ('showOpenFilePicker' in window) {
+                try {
+                    const [handle] = await window.showOpenFilePicker({
+                        types: [{ description: 'Markdown / Text', accept: { 'text/plain': ['.md', '.txt'] } }]
+                    });
+                    currentFileHandle = handle;
+                    const file = await handle.getFile();
+                    const text = await file.text();
+                    noteTextarea.value = text;
+                    saveLocalBackup();
+                    wordCountText.textContent = `${text.length} 字`;
+                    
+                    const timeNow = new Date().toLocaleTimeString();
+                    saveStateText.textContent = `已成功绑定原文件: ${handle.name} (时间: ${timeNow})`;
+                    saveStateText.className = 'text-emerald-400 font-semibold';
+                    saveBtnText.textContent = '覆写保存 (⌘S)';
+                } catch (err) {
+                    console.log('用户取消选择或授权未通过');
+                }
+            } else {
+                alert('请使用 Chrome 或 Edge 浏览器体验直接覆写本地文件功能。');
+            }
         });
 
-        noteTextarea.addEventListener('input', () => {
-            saveLocalBackup();
-            wordCountText.textContent = `${noteTextarea.value.length} 字`;
-        });
-
-        function saveLocalBackup() {
-            localStorage.setItem('studio_note_backup', noteTextarea.value);
-        }
-
-        // Direct Save (Overwriting original file if handle exists)
         async function saveNoteDirectly() {
             const content = noteTextarea.value;
-            if (fileHandle) {
+            const timeNow = new Date().toLocaleTimeString();
+
+            // Scenario 1: Existing File Handle Bound -> Direct Silent Overwrite
+            if (currentFileHandle) {
                 try {
-                    const writable = await fileHandle.createWritable();
+                    const writable = await currentFileHandle.createWritable();
                     await writable.write(content);
                     await writable.close();
-                    saveStateText.textContent = `已成功直接保存至: ${fileHandle.name}`;
-                    saveStateText.className = 'text-emerald-400';
+                    
+                    // Show updated status with real-time local clock
+                    saveStateText.textContent = `已于 ${timeNow} 成功保存至: ${currentFileHandle.name}`;
+                    saveStateText.className = 'text-emerald-400 font-semibold';
                     return;
                 } catch (err) {
-                    console.warn('直接覆盖保存失败，改用另存为:', err);
+                    console.warn('保存遇到阻碍，重新申请文件窗口:', err);
                 }
             }
 
-            // Fallback: Show File Picker if API is available, or Download
+            // Scenario 2: Unbound -> Prompt user ONCE to pick file
             if ('showSaveFilePicker' in window) {
                 try {
-                    fileHandle = await window.showSaveFilePicker({
+                    currentFileHandle = await window.showSaveFilePicker({
                         suggestedName: `Video_Note_${new Date().toISOString().slice(0, 10)}.md`,
-                        types: [{ description: 'Markdown / Text', accept: { 'text/markdown': ['.md', '.txt'] } }]
+                        types: [{ description: 'Markdown / Text', accept: { 'text/plain': ['.md', '.txt'] } }]
                     });
-                    const writable = await fileHandle.createWritable();
+                    const writable = await currentFileHandle.createWritable();
                     await writable.write(content);
                     await writable.close();
-                    saveStateText.textContent = `已绑定并保存至: ${fileHandle.name}`;
-                    saveStateText.className = 'text-emerald-400';
-                    saveBtnText.textContent = '保存笔记 (原文件)';
+                    
+                    saveStateText.textContent = `已绑定并于 ${timeNow} 成功保存至: ${currentFileHandle.name}`;
+                    saveStateText.className = 'text-emerald-400 font-semibold';
+                    saveBtnText.textContent = '覆写保存 (⌘S)';
                 } catch (err) {
                     // Cancelled
                 }
             } else {
-                // Classic Download Fallback
                 exportDownloadFallback(content);
             }
         }
@@ -745,7 +847,7 @@
         saveNoteBtn.addEventListener('click', saveNoteDirectly);
 
         saveAsNoteBtn.addEventListener('click', async () => {
-            fileHandle = null;
+            currentFileHandle = null;
             await saveNoteDirectly();
         });
 
@@ -757,23 +859,27 @@
             a.download = `Video_Note_${new Date().toISOString().slice(0, 10)}.md`;
             a.click();
             URL.revokeObjectURL(url);
-            saveStateText.textContent = '已导出新文件下载';
+            saveStateText.textContent = `已于 ${new Date().toLocaleTimeString()} 导出下载`;
         }
 
-        // Open/Import File with Handle Retention
-        importNoteInput.addEventListener('change', async (e) => {
-            const file = e.target.files[0];
-            if (file) {
-                const reader = new FileReader();
-                reader.onload = (evt) => {
-                    noteTextarea.value = evt.target.result;
-                    saveLocalBackup();
-                    wordCountText.textContent = `${noteTextarea.value.length} 字`;
-                    saveStateText.textContent = `已载入文件: ${file.name}`;
-                    saveBtnText.textContent = '保存笔记';
-                };
-                reader.readAsText(file);
-            }
+        function saveLocalBackup() {
+            localStorage.setItem('studio_note_backup', noteTextarea.value);
+        }
+
+        noteTextarea.addEventListener('input', () => {
+            saveLocalBackup();
+            wordCountText.textContent = `${noteTextarea.value.length} 字`;
+        });
+
+        insertTimestampBtn.addEventListener('click', () => {
+            const timeStr = `[${formatTime(mainVideo.currentTime)}] `;
+            const start = noteTextarea.selectionStart;
+            const end = noteTextarea.selectionEnd;
+            const text = noteTextarea.value;
+            noteTextarea.value = text.substring(0, start) + timeStr + text.substring(end);
+            noteTextarea.selectionStart = noteTextarea.selectionEnd = start + timeStr.length;
+            noteTextarea.focus();
+            saveLocalBackup();
         });
 
         // Load Stored Backup
