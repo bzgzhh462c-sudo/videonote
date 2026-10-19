@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="zh-CN" class="h-full dark">
+<html lang="zh-CN" class="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>视频分析与本地笔记工作站 - AudioVisual Studio Pro</title>
+    <title>AudioVisualizer Studio Pro - 视频分析与笔记工作站</title>
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -13,14 +13,11 @@
                 extend: {
                     colors: {
                         brand: {
-                            500: '#3b82f6',
-                            600: '#2563eb',
-                        },
-                        accent: {
-                            cyan: '#06b6d4',
-                            emerald: '#10b981',
-                            rose: '#f43f5e',
-                            amber: '#f59e0b',
+                            50: '#f0f9ff',
+                            500: '#0284c7',
+                            600: '#0284c7',
+                            700: '#0369a1',
+                            900: '#0c4a6e',
                         }
                     }
                 }
@@ -29,830 +26,740 @@
     </script>
     <!-- FontAwesome Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <!-- Google Fonts -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        body { font-family: 'Inter', system-ui, -apple-system, sans-serif; }
-        ::-webkit-scrollbar { width: 6px; height: 6px; }
-        ::-webkit-scrollbar-track { background: rgba(15, 23, 42, 0.6); }
-        ::-webkit-scrollbar-thumb { background: rgba(51, 65, 85, 0.8); border-radius: 4px; }
-        ::-webkit-scrollbar-thumb:hover { background: rgba(71, 85, 105, 1); }
-
-        /* Splitter Resizers */
-        .resizer-h {
+        /* Custom Scrollbars */
+        ::-webkit-scrollbar {
             width: 6px;
-            cursor: col-resize;
-            background-color: rgba(30, 41, 59, 0.8);
-            transition: background-color 0.2s;
-        }
-        .resizer-h:hover, .resizer-h.resizing { background-color: #3b82f6; }
-
-        .resizer-v {
             height: 6px;
-            cursor: row-resize;
-            background-color: rgba(30, 41, 59, 0.8);
-            transition: background-color 0.2s;
         }
-        .resizer-v:hover, .resizer-v.resizing { background-color: #3b82f6; }
+        ::-webkit-scrollbar-track {
+            background: #1e293b;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #475569;
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #64748b;
+        }
+        /* Canvas Waveform Box */
+        .waveform-container {
+            user-select: none;
+            touch-action: none;
+        }
+        /* Resize handles */
+        .resizer-h {
+            cursor: row-resize;
+            height: 6px;
+        }
+        .resizer-v {
+            cursor: col-resize;
+            width: 6px;
+        }
     </style>
 </head>
-<body class="bg-slate-950 text-slate-100 h-full flex flex-col overflow-hidden select-none">
+<body class="bg-slate-950 text-slate-100 min-h-screen h-screen flex flex-col font-sans overflow-hidden select-none">
 
-    <!-- Top Header Navigation Bar -->
-    <header class="h-14 border-b border-slate-800 bg-slate-900/90 backdrop-blur px-4 flex items-center justify-between z-10 shrink-0">
+    <!-- Header / Top Bar -->
+    <header class="h-12 bg-slate-900 border-b border-slate-800 flex items-center justify-between px-4 shrink-0">
         <div class="flex items-center space-x-3">
-            <div class="w-8 h-8 rounded-lg bg-gradient-to-tr from-blue-600 to-cyan-400 flex items-center justify-center shadow-lg shadow-blue-500/20">
-                <i class="fa-solid fa-film text-white text-sm"></i>
+            <div class="bg-sky-600 text-white p-1.5 rounded-lg flex items-center justify-center">
+                <i class="fa-solid fa-photo-film text-lg"></i>
             </div>
-            <h1 class="font-bold text-base tracking-wide bg-gradient-to-r from-white via-slate-200 to-slate-400 bg-clip-text text-transparent">
-                Video Analysis Studio Pro <span class="text-xs px-2 py-0.5 rounded bg-blue-500/20 text-blue-400 font-mono border border-blue-500/30">v5.0</span>
+            <h1 class="text-base font-bold bg-gradient-to-r from-sky-400 to-blue-500 bg-clip-text text-transparent">
+                AudioVisualizer Studio Pro <span class="text-xs px-2 py-0.5 rounded bg-sky-950 text-sky-400 border border-sky-800">Pure Video</span>
             </h1>
         </div>
 
-        <div class="flex items-center space-x-3">
-            <span class="text-xs text-slate-400 hidden sm:inline"><i class="fa-regular fa-keyboard mr-1"></i>快捷键: <kbd class="px-1.5 py-0.5 bg-slate-800 border border-slate-700 rounded text-slate-300 font-mono">Space</kbd> 播放/暂停</span>
-            <label class="cursor-pointer bg-blue-600 hover:bg-blue-500 text-white text-xs px-3.5 py-2 rounded-lg font-medium transition flex items-center shadow-lg shadow-blue-600/20 active:scale-95">
-                <i class="fa-solid fa-file-video mr-2"></i> 打开本地视频
-                <input type="file" id="mediaFileInput" accept="video/*" class="hidden">
+        <!-- File Controls -->
+        <div class="flex items-center space-x-3 text-xs">
+            <label class="cursor-pointer bg-sky-600 hover:bg-sky-500 text-white font-medium px-3 py-1.5 rounded-md flex items-center space-x-1.5 transition">
+                <i class="fa-solid fa-folder-open"></i>
+                <span>打开本地视频</span>
+                <input type="file" id="videoFileInput" accept="video/*" class="hidden">
             </label>
-            <div id="fileInfoDisplay" class="text-xs text-slate-400 max-w-[180px] truncate hidden">
-                <i class="fa-solid fa-paperclip mr-1 text-slate-500"></i><span id="fileName">未加载文件</span>
-            </div>
+            <div class="h-4 w-px bg-slate-700"></div>
+            <button id="exportNoteBtn" class="bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-md border border-slate-700 flex items-center space-x-1.5 transition">
+                <i class="fa-solid fa-floppy-disk text-sky-400"></i>
+                <span>保存笔记</span>
+            </button>
+            <label class="cursor-pointer bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-md border border-slate-700 flex items-center space-x-1.5 transition">
+                <i class="fa-solid fa-file-import text-amber-400"></i>
+                <span>导入笔记</span>
+                <input type="file" id="importNoteInput" accept=".md,.txt" class="hidden">
+            </label>
         </div>
     </header>
 
-    <!-- Main Workspace (Splitter Layout) -->
-    <main id="mainLayout" class="flex-1 flex overflow-hidden relative">
-
-        <!-- LEFT PANEL: Video Player, Waveform Analysis Box & Control Bar -->
-        <div id="leftPanel" class="flex flex-col bg-slate-950/50 overflow-hidden" style="width: 60%;">
+    <!-- Main Studio Split Layout -->
+    <div id="mainContainer" class="flex-1 flex flex-col md:flex-row overflow-hidden relative">
+        
+        <!-- Left Panel: Video Analysis Studio -->
+        <div id="leftPanel" class="flex-1 flex flex-col min-w-[320px] bg-slate-900/50 overflow-hidden">
             
-            <!-- Video Viewport Sub-panel -->
-            <div id="playerBox" class="relative bg-black flex items-center justify-center shrink-0 min-h-[180px] border-b border-slate-800 group overflow-hidden" style="height: 320px;">
-                <div id="dropZone" class="absolute inset-0 bg-slate-900/90 border-2 border-dashed border-blue-500/50 rounded-lg m-2 flex flex-col items-center justify-center z-20 transition-all duration-200 opacity-0 pointer-events-none group-hover:opacity-100">
-                    <i class="fa-solid fa-cloud-arrow-up text-4xl text-blue-400 mb-2 animate-bounce"></i>
-                    <p class="text-sm font-medium text-slate-300">拖拽本地视频文件至此处播放</p>
-                </div>
-
-                <video id="mainVideo" class="w-full h-full object-contain hidden" crossorigin="anonymous"></video>
-
-                <div id="videoPlaceholder" class="flex flex-col items-center justify-center py-10 text-slate-600">
-                    <i class="fa-solid fa-circle-play text-6xl mb-3 text-slate-700"></i>
-                    <p class="text-sm text-slate-400">选择或拖入本地视频文件（MP4 / WebM / MKV）开启解构分析</p>
-                </div>
-            </div>
-
-            <!-- Vertical Resizer 1 (Between Player and Waveform Box) -->
-            <div id="resizerV1" class="resizer-v shrink-0"></div>
-
-            <!-- Scrollable Analysis & Waveform Container -->
-            <div class="flex-1 flex flex-col overflow-y-auto">
+            <!-- Video Player Window -->
+            <div id="videoContainer" class="flex-1 bg-black flex items-center justify-center relative overflow-hidden group">
+                <video id="mainVideo" class="max-h-full max-w-full object-contain"></video>
                 
-                <!-- Dedicated Resizable Waveform Section Container -->
-                <div id="waveformBox" class="p-3 bg-slate-900/40 border-b border-slate-800/80 flex flex-col shrink-0 relative" style="height: 190px; min-height: 120px;">
-                    <div class="flex items-center justify-between mb-1.5 shrink-0">
-                        <div class="flex items-center space-x-2">
-                            <span class="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center">
-                                <i class="fa-solid fa-chart-simple text-blue-400 mr-1.5"></i> 音频解构波形 (直接按住 A/B 标签拖拽)
-                            </span>
-                            <label class="flex items-center text-[11px] text-slate-400 space-x-1 cursor-pointer">
-                                <input type="checkbox" id="chkAutoScroll" checked class="rounded border-slate-700 bg-slate-800 text-blue-600 focus:ring-0">
-                                <span>跟随视口</span>
-                            </label>
-                        </div>
+                <!-- Custom Floating Video Controls Overlay -->
+                <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent p-3 opacity-0 group-hover:opacity-100 transition-opacity flex items-center space-x-3">
+                    <button id="playPauseBtn" class="text-white hover:text-sky-400 text-xl w-8 h-8 flex items-center justify-center">
+                        <i class="fa-solid fa-play"></i>
+                    </button>
+                    <span id="currentTimeDisplay" class="text-xs font-mono text-slate-300">00:00.0 / 00:00.0</span>
+                    <input type="range" id="videoProgressBar" value="0" step="0.01" class="flex-1 accent-sky-500 bg-slate-700 h-1.5 rounded cursor-pointer">
+                    <button id="muteBtn" class="text-slate-300 hover:text-white text-sm">
+                        <i class="fa-solid fa-volume-high"></i>
+                    </button>
+                </div>
+            </div>
 
-                        <!-- Zoom Controls -->
-                        <div class="flex items-center space-x-1.5 bg-slate-900 p-1 rounded-lg border border-slate-800">
-                            <button id="btnZoomOut" class="p-1 px-2 text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 rounded" title="缩小波形">
-                                <i class="fa-solid fa-magnifying-glass-minus"></i>
-                            </button>
-                            <span id="zoomLevelDisplay" class="text-xs font-mono px-1 text-blue-400">1.0x</span>
-                            <button id="btnZoomIn" class="p-1 px-2 text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 rounded" title="放大波形">
-                                <i class="fa-solid fa-magnifying-glass-plus"></i>
-                            </button>
-                            <button id="btnZoomReset" class="p-1 px-2 text-xs bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white rounded" title="重置">
-                                <i class="fa-solid fa-rotate"></i>
-                            </button>
-                        </div>
+            <!-- Waveform Resizer Bar -->
+            <div id="waveformResizer" class="resizer-h bg-slate-800 hover:bg-sky-500 transition-colors flex items-center justify-center border-y border-slate-700/50">
+                <div class="w-8 h-1 bg-slate-600 rounded-full"></div>
+            </div>
+
+            <!-- Waveform & Controls Region -->
+            <div id="waveformBox" class="h-48 bg-slate-950 flex flex-col border-t border-slate-800 shrink-0 relative">
+                
+                <!-- Waveform Toolbar -->
+                <div class="h-9 bg-slate-900 border-b border-slate-800 flex items-center justify-between px-3 text-xs">
+                    <div class="flex items-center space-x-2">
+                        <span class="text-slate-400 font-medium"><i class="fa-solid fa-wave-square text-sky-400 mr-1"></i>波形视口:</span>
+                        <button id="zoomOutBtn" class="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded text-slate-200">
+                            <i class="fa-solid fa-magnifying-glass-minus"></i> 缩小
+                        </button>
+                        <span id="zoomLevelDisplay" class="font-mono text-sky-400">1.0x</span>
+                        <button id="zoomInBtn" class="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded text-slate-200">
+                            <i class="fa-solid fa-magnifying-glass-plus"></i> 放大
+                        </button>
                     </div>
 
-                    <!-- Waveform Canvas Scrollable Viewport -->
-                    <div id="waveformWrapper" class="relative w-full flex-1 bg-slate-950 rounded-lg overflow-x-auto overflow-y-hidden border border-slate-800 cursor-crosshair shadow-inner select-none">
-                        <canvas id="waveformCanvas" class="h-full block"></canvas>
-                        
-                        <div id="loadingWaveform" class="absolute inset-0 bg-slate-900/80 flex items-center justify-center text-xs text-blue-400 hidden backdrop-blur-sm">
-                            <i class="fa-solid fa-circle-notch animate-spin mr-2"></i> 正在提取视频音频流并精准解码波形...
-                        </div>
+                    <!-- AB Loop Controls -->
+                    <div class="flex items-center space-x-2">
+                        <button id="setPointABtn" class="px-2 py-0.5 bg-emerald-950 hover:bg-emerald-900 text-emerald-400 border border-emerald-800 rounded font-mono">
+                            设定 A 点
+                        </button>
+                        <button id="setPointBBtn" class="px-2 py-0.5 bg-rose-950 hover:bg-rose-900 text-rose-400 border border-rose-800 rounded font-mono">
+                            设定 B 点
+                        </button>
+                        <button id="toggleLoopBtn" class="px-2.5 py-0.5 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded flex items-center space-x-1">
+                            <i class="fa-solid fa-rotate-left"></i>
+                            <span>AB 循环: <b id="loopStatusText" class="text-rose-400">关</b></span>
+                        </button>
+                        <button id="clearABBtn" class="px-1.5 py-0.5 text-slate-400 hover:text-slate-200" title="清除 AB 点">
+                            <i class="fa-solid fa-xmark"></i>
+                        </button>
                     </div>
-
-                    <div class="flex justify-between items-center mt-1 text-[11px] text-slate-500 font-mono shrink-0">
-                        <span>💡 单击画面跳转播放，或按住 <span class="text-emerald-400">[A]</span> / <span class="text-rose-400">[B]</span> 把手平滑拖拽</span>
-                        <span id="timeDisplay" class="text-blue-400 font-semibold">00:00.000 / 00:00.000</span>
-                    </div>
-
-                    <!-- Resizer Handle Specifically for Waveform Box Height -->
-                    <div id="resizerWaveformBox" class="resizer-v absolute bottom-0 left-0 right-0 h-1.5 cursor-row-resize bg-slate-800 hover:bg-blue-500 transition-colors"></div>
                 </div>
 
-                <!-- Playback Control Toolbar -->
-                <div class="p-3 space-y-2.5 bg-slate-900/20 shrink-0">
-                    <div class="flex flex-wrap items-center justify-between gap-2">
-                        <div class="flex items-center space-x-2">
-                            <button id="btnSkipBack" class="p-1.5 px-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs">
-                                <i class="fa-solid fa-rotate-left"></i> 5s
-                            </button>
-                            <button id="btnPlayPause" class="w-9 h-9 rounded-xl bg-blue-600 hover:bg-blue-500 text-white flex items-center justify-center shadow-lg shadow-blue-600/30 transition active:scale-95">
-                                <i class="fa-solid fa-play text-sm ml-0.5" id="playIcon"></i>
-                            </button>
-                            <button id="btnSkipForward" class="p-1.5 px-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs">
-                                5s <i class="fa-solid fa-rotate-right"></i>
-                            </button>
-                        </div>
+                <!-- Canvas Waveform Canvas Container -->
+                <div id="waveformScrollContainer" class="flex-1 overflow-x-auto overflow-y-hidden relative waveform-container bg-slate-950">
+                    <canvas id="waveformCanvas" class="h-full block cursor-crosshair"></canvas>
+                </div>
 
-                        <div class="flex items-center space-x-3">
-                            <div class="flex items-center space-x-1">
-                                <i class="fa-solid fa-gauge text-slate-400 text-xs"></i>
-                                <select id="speedSelect" class="bg-slate-800 border border-slate-700 rounded text-xs text-slate-200 px-1.5 py-0.5">
-                                    <option value="0.5">0.5x</option>
-                                    <option value="0.75">0.75x</option>
-                                    <option value="1.0" selected>1.0x</option>
-                                    <option value="1.25">1.25x</option>
-                                    <option value="1.5">1.5x</option>
-                                    <option value="2.0">2.0x</option>
-                                </select>
-                            </div>
-
-                            <div class="flex items-center space-x-1.5">
-                                <button id="btnMute" class="text-slate-400 hover:text-slate-200 text-xs">
-                                    <i class="fa-solid fa-volume-high" id="volumeIcon"></i>
-                                </button>
-                                <input type="range" id="volumeSlider" min="0" max="1" step="0.05" value="1" class="w-16 accent-blue-500 h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer">
-                            </div>
-                        </div>
+                <!-- AB Precision Fine Tuning Bar -->
+                <div class="h-8 bg-slate-900/80 border-t border-slate-800/80 flex items-center justify-between px-3 text-xs font-mono">
+                    <div class="flex items-center space-x-2">
+                        <span class="text-emerald-400">A 点:</span>
+                        <input type="number" id="inputTimeA" step="0.1" min="0" value="0.0" class="w-16 bg-slate-950 border border-slate-700 rounded px-1 text-emerald-400">
+                        <button id="aMinusBtn" class="px-1.5 py-0.5 bg-slate-800 rounded hover:bg-slate-700">-0.1s</button>
+                        <button id="aPlusBtn" class="px-1.5 py-0.5 bg-slate-800 rounded hover:bg-slate-700">+0.1s</button>
                     </div>
-
-                    <!-- AB Loop Independent Fine Controls -->
-                    <div class="bg-slate-900/80 p-2.5 rounded-xl border border-slate-800 flex flex-wrap items-center justify-between gap-2 text-xs">
-                        <div class="flex items-center space-x-2">
-                            <span class="font-semibold text-slate-400 flex items-center">
-                                <i class="fa-solid fa-repeat text-emerald-400 mr-1"></i> AB 选区:
-                            </span>
-                            <button id="btnClearAB" class="px-2 py-0.5 text-slate-400 hover:text-slate-200 rounded hover:bg-slate-800 transition">
-                                <i class="fa-solid fa-trash-can mr-1"></i>清除
-                            </button>
-                            <label class="flex items-center cursor-pointer ml-1">
-                                <input type="checkbox" id="toggleABLoop" class="sr-only peer">
-                                <div class="w-7 h-3.5 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[1px] after:left-[1px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-emerald-500 relative"></div>
-                                <span class="ml-1 text-slate-300">开启循环</span>
-                            </label>
-                        </div>
-
-                        <!-- Point A & B Fine-tune Buttons -->
-                        <div class="flex flex-wrap items-center gap-2 font-mono">
-                            <!-- Point A -->
-                            <div class="flex items-center space-x-1 bg-slate-950 px-2 py-1 rounded border border-slate-800">
-                                <span class="text-emerald-400 font-bold">A:</span>
-                                <input type="number" id="inputA" step="0.1" min="0" class="w-14 bg-slate-900 text-slate-200 px-1 py-0.5 rounded border border-slate-700 text-center text-xs focus:outline-none focus:border-emerald-500" placeholder="0.0">
-                                <button id="btnSetCurrentA" class="bg-slate-800 hover:bg-slate-700 text-slate-300 px-1.5 py-0.5 rounded text-[10px]">设当前</button>
-                                <button id="btnAminus01" class="hover:text-blue-400 text-[10px]">-0.1s</button>
-                                <button id="btnAplus01" class="hover:text-blue-400 text-[10px]">+0.1s</button>
-                            </div>
-
-                            <!-- Point B -->
-                            <div class="flex items-center space-x-1 bg-slate-950 px-2 py-1 rounded border border-slate-800">
-                                <span class="text-rose-400 font-bold">B:</span>
-                                <input type="number" id="inputB" step="0.1" min="0" class="w-14 bg-slate-900 text-slate-200 px-1 py-0.5 rounded border border-slate-700 text-center text-xs focus:outline-none focus:border-rose-500" placeholder="0.0">
-                                <button id="btnSetCurrentB" class="bg-slate-800 hover:bg-slate-700 text-slate-300 px-1.5 py-0.5 rounded text-[10px]">设当前</button>
-                                <button id="btnBminus01" class="hover:text-blue-400 text-[10px]">-0.1s</button>
-                                <button id="btnBplus01" class="hover:text-blue-400 text-[10px]">+0.1s</button>
-                            </div>
-                        </div>
+                    <div class="text-slate-500 text-[10px]">按住波形长按拖拽可直接划定 AB 选区</div>
+                    <div class="flex items-center space-x-2">
+                        <span class="text-rose-400">B 点:</span>
+                        <input type="number" id="inputTimeB" step="0.1" min="0" value="0.0" class="w-16 bg-slate-950 border border-slate-700 rounded px-1 text-rose-400">
+                        <button id="bMinusBtn" class="px-1.5 py-0.5 bg-slate-800 rounded hover:bg-slate-700">-0.1s</button>
+                        <button id="bPlusBtn" class="px-1.5 py-0.5 bg-slate-800 rounded hover:bg-slate-700">+0.1s</button>
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- Horizontal Resizer (Left vs Right Splitter) -->
-        <div id="resizerH" class="resizer-h shrink-0"></div>
+        <!-- Vertical Split Resizer between Video and Note Panel -->
+        <div id="panelResizer" class="resizer-v bg-slate-800 hover:bg-sky-500 transition-colors hidden md:block border-x border-slate-700/50"></div>
 
-        <!-- RIGHT PANEL: Studio Note-taking Workspace -->
-        <div id="rightPanel" class="flex-1 flex flex-col bg-slate-900/50 overflow-hidden">
-            <div class="h-12 border-b border-slate-800 px-3 flex items-center justify-between bg-slate-900/80 shrink-0">
+        <!-- Right Panel: Note Editor & Speech Transcription -->
+        <div id="rightPanel" class="w-full md:w-[420px] flex flex-col bg-slate-900 shrink-0 border-l border-slate-800">
+            
+            <!-- Speech Recognition Header Bar -->
+            <div class="p-3 bg-slate-900 border-b border-slate-800 flex items-center justify-between">
                 <div class="flex items-center space-x-2">
-                    <i class="fa-solid fa-book-bookmark text-amber-400 text-sm"></i>
-                    <span class="font-semibold text-xs tracking-wider text-slate-200">视频分析笔记工作区</span>
-                    <span id="draftStatus" class="text-[10px] text-slate-500 italic ml-1">已暂存</span>
+                    <i class="fa-solid fa-closed-captioning text-sky-400"></i>
+                    <span class="text-xs font-bold text-slate-200">视频内容实时语音转写</span>
                 </div>
-
-                <div class="flex items-center space-x-1">
-                    <button id="btnInsertTimestamp" class="px-2 py-1 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/30 rounded text-xs transition flex items-center">
-                        <i class="fa-solid fa-clock mr-1"></i> 插入时间戳
-                    </button>
-                    <label class="cursor-pointer p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded transition" title="打开本地 Markdown/TXT 笔记">
-                        <i class="fa-solid fa-folder-open"></i>
-                        <input type="file" id="noteFileInput" accept=".txt,.md,.markdown" class="hidden">
-                    </label>
-                    <button id="btnSaveNote" class="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded transition" title="保存笔记至本地">
-                        <i class="fa-solid fa-floppy-disk"></i>
-                    </button>
-                    <button id="btnClearNote" class="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded transition" title="清空笔记">
-                        <i class="fa-solid fa-trash"></i>
-                    </button>
-                </div>
+                <button id="toggleSttBtn" class="px-2.5 py-1 bg-sky-600 hover:bg-sky-500 text-white rounded text-xs flex items-center space-x-1.5 transition">
+                    <i class="fa-solid fa-microphone"></i>
+                    <span id="sttStatusText">开启识别</span>
+                </button>
             </div>
 
-            <div class="flex-1 p-3 flex flex-col overflow-hidden relative">
-                <textarea id="noteEditor" class="w-full h-full bg-slate-950/80 border border-slate-800 rounded-xl p-3.5 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-blue-500/60 font-mono resize-none leading-relaxed shadow-inner" placeholder="在此编写视频分析笔记，点击插入 [MM:SS] 时间戳可进行联动精准播放..."></textarea>
+            <!-- Speech Output Box -->
+            <div id="transcriptBox" class="h-32 bg-slate-950 p-3 overflow-y-auto border-b border-slate-800 text-xs space-y-1.5 font-sans">
+                <div class="text-slate-500 italic">视频播放时开启转写，听到内容将实时输出带时间戳字幕...</div>
             </div>
 
-            <!-- Quick Jump Timestamp Tags -->
-            <div class="p-2.5 border-t border-slate-800 bg-slate-950/40 shrink-0">
-                <div class="text-[11px] font-semibold text-slate-400 mb-1">
-                    <i class="fa-solid fa-tags text-blue-400 mr-1"></i> 检测到的时间节点 (点击跳转播放):
+            <!-- Note Editor Header -->
+            <div class="p-2.5 bg-slate-900 border-b border-slate-800 flex items-center justify-between">
+                <div class="flex items-center space-x-2">
+                    <i class="fa-solid fa-pen-to-square text-amber-400"></i>
+                    <span class="text-xs font-bold text-slate-200">视频笔记工作台</span>
                 </div>
-                <div id="timestampList" class="flex flex-wrap gap-1.5 max-h-16 overflow-y-auto">
-                    <span class="text-xs text-slate-600 italic">暂无时间戳...</span>
-                </div>
+                <button id="insertTimestampBtn" class="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700 rounded text-xs flex items-center space-x-1">
+                    <i class="fa-regular fa-clock"></i>
+                    <span>插入当前时间戳</span>
+                </button>
+            </div>
+
+            <!-- Note Textarea -->
+            <div class="flex-1 p-3 bg-slate-900 flex flex-col">
+                <textarea id="noteTextarea" class="w-full flex-1 bg-slate-950 text-slate-100 p-3 rounded-lg border border-slate-800 focus:border-sky-500 focus:outline-none font-sans text-sm resize-none leading-relaxed" placeholder="在此输入笔记内容... 点击右上方按钮可随时插入带有播放时间的快捷跳转链接 [MM:SS]"></textarea>
+            </div>
+
+            <!-- Note Status Footer -->
+            <div class="h-7 bg-slate-950 border-t border-slate-800 px-3 flex items-center justify-between text-[11px] text-slate-500">
+                <span id="saveStateText">已自动暂存至本地缓存</span>
+                <span id="wordCountText">0 字</span>
             </div>
         </div>
-    </main>
-
-    <!-- Toast Notification -->
-    <div id="toast" class="fixed bottom-4 right-4 bg-slate-800 text-slate-200 px-4 py-2.5 rounded-xl shadow-2xl border border-slate-700 text-xs flex items-center space-x-2 transition-all duration-300 opacity-0 transform translate-y-2 pointer-events-none z-50">
-        <i id="toastIcon" class="fa-solid fa-circle-info text-blue-400"></i>
-        <span id="toastMsg">提示信息</span>
     </div>
 
-    <!-- Application Controller -->
+    <!-- JavaScript Application Logic -->
     <script>
-        const state = {
-            mediaFile: null,
-            audioContext: null,
-            audioBuffer: null,
-            duration: 0,
-            currentTime: 0,
-            zoomLevel: 1.0,
-            draggingHandle: null, // 'A' or 'B'
-            abLoop: { start: null, end: null, enabled: false }
-        };
+        // DOM Elements
+        const videoFileInput = document.getElementById('videoFileInput');
+        const mainVideo = document.getElementById('mainVideo');
+        const playPauseBtn = document.getElementById('playPauseBtn');
+        const currentTimeDisplay = document.getElementById('currentTimeDisplay');
+        const videoProgressBar = document.getElementById('videoProgressBar');
+        const muteBtn = document.getElementById('muteBtn');
 
-        const $ = id => document.getElementById(id);
-        const elements = {
-            mediaFileInput: $('mediaFileInput'),
-            mainVideo: $('mainVideo'),
-            videoPlaceholder: $('videoPlaceholder'),
-            dropZone: $('dropZone'),
-            waveformCanvas: $('waveformCanvas'),
-            waveformWrapper: $('waveformWrapper'),
-            loadingWaveform: $('loadingWaveform'),
-            chkAutoScroll: $('chkAutoScroll'),
-            btnZoomIn: $('btnZoomIn'),
-            btnZoomOut: $('btnZoomOut'),
-            btnZoomReset: $('btnZoomReset'),
-            zoomLevelDisplay: $('zoomLevelDisplay'),
-            btnPlayPause: $('btnPlayPause'),
-            playIcon: $('playIcon'),
-            btnSkipBack: $('btnSkipBack'),
-            btnSkipForward: $('btnSkipForward'),
-            speedSelect: $('speedSelect'),
-            volumeSlider: $('volumeSlider'),
-            btnMute: $('btnMute'),
-            volumeIcon: $('volumeIcon'),
-            timeDisplay: $('timeDisplay'),
-            btnClearAB: $('btnClearAB'),
-            toggleABLoop: $('toggleABLoop'),
-            inputA: $('inputA'),
-            inputB: $('inputB'),
-            btnSetCurrentA: $('btnSetCurrentA'),
-            btnSetCurrentB: $('btnSetCurrentB'),
-            btnAminus01: $('btnAminus01'),
-            btnAplus01: $('btnAplus01'),
-            btnBminus01: $('btnBminus01'),
-            btnBplus01: $('btnBplus01'),
-            noteEditor: $('noteEditor'),
-            btnInsertTimestamp: $('btnInsertTimestamp'),
-            noteFileInput: $('noteFileInput'),
-            btnSaveNote: $('btnSaveNote'),
-            btnClearNote: $('btnClearNote'),
-            timestampList: $('timestampList'),
-            fileInfoDisplay: $('fileInfoDisplay'),
-            fileName: $('fileName'),
-            // Resizers & Panels
-            mainLayout: $('mainLayout'),
-            leftPanel: $('leftPanel'),
-            rightPanel: $('rightPanel'),
-            resizerH: $('resizerH'),
-            playerBox: $('playerBox'),
-            resizerV1: $('resizerV1'),
-            waveformBox: $('waveformBox'),
-            resizerWaveformBox: $('resizerWaveformBox')
-        };
+        const waveformScrollContainer = document.getElementById('waveformScrollContainer');
+        const waveformCanvas = document.getElementById('waveformCanvas');
+        const ctx = waveformCanvas.getContext('2d');
+        const zoomInBtn = document.getElementById('zoomInBtn');
+        const zoomOutBtn = document.getElementById('zoomOutBtn');
+        const zoomLevelDisplay = document.getElementById('zoomLevelDisplay');
 
-        window.addEventListener('DOMContentLoaded', () => {
-            initMediaListeners();
-            initWaveformInteraction();
-            initABLoopControls();
-            initNoteEditor();
-            initResizers();
-            initKeyboardShortcuts();
-            initDragAndDrop();
-        });
+        const setPointABtn = document.getElementById('setPointABtn');
+        const setPointBBtn = document.getElementById('setPointBBtn');
+        const toggleLoopBtn = document.getElementById('toggleLoopBtn');
+        const loopStatusText = document.getElementById('loopStatusText');
+        const clearABBtn = document.getElementById('clearABBtn');
 
-        function formatTime(sec, includeMs = true) {
-            if (isNaN(sec) || sec === null) return '--:--';
-            const m = Math.floor(sec / 60);
-            const s = Math.floor(sec % 60);
-            const ms = Math.floor((sec % 1) * 1000);
-            const pad = n => String(n).padStart(2, '0');
-            const pad3 = n => String(n).padStart(3, '0');
-            return includeMs ? `${pad(m)}:${pad(s)}.${pad3(ms)}` : `${pad(m)}:${pad(s)}`;
-        }
+        const inputTimeA = document.getElementById('inputTimeA');
+        const inputTimeB = document.getElementById('inputTimeB');
+        const aMinusBtn = document.getElementById('aMinusBtn');
+        const aPlusBtn = document.getElementById('aPlusBtn');
+        const bMinusBtn = document.getElementById('bMinusBtn');
+        const bPlusBtn = document.getElementById('bPlusBtn');
 
-        function showToast(msg, type = 'info') {
-            const toast = $('toast');
-            $('toastMsg').innerText = msg;
-            $('toastIcon').className = type === 'error' ? 'fa-solid fa-circle-exclamation text-rose-400' : 'fa-solid fa-circle-info text-blue-400';
-            toast.classList.remove('opacity-0', 'translate-y-2', 'pointer-events-none');
-            toast.classList.add('opacity-100', 'translate-y-0');
-            setTimeout(() => {
-                toast.classList.remove('opacity-100', 'translate-y-0');
-                toast.classList.add('opacity-0', 'translate-y-2', 'pointer-events-none');
-            }, 2500);
-        }
+        const noteTextarea = document.getElementById('noteTextarea');
+        const exportNoteBtn = document.getElementById('exportNoteBtn');
+        const importNoteInput = document.getElementById('importNoteInput');
+        const insertTimestampBtn = document.getElementById('insertTimestampBtn');
+        const saveStateText = document.getElementById('saveStateText');
+        const wordCountText = document.getElementById('wordCountText');
 
-        function initKeyboardShortcuts() {
-            window.addEventListener('keydown', e => {
-                if (e.code === 'Space') {
-                    const active = document.activeElement;
-                    if (active && (active.tagName === 'TEXTAREA' || active.tagName === 'INPUT')) return;
-                    e.preventDefault();
-                    togglePlayPause();
-                }
-            });
-        }
+        const toggleSttBtn = document.getElementById('toggleSttBtn');
+        const sttStatusText = document.getElementById('sttStatusText');
+        const transcriptBox = document.getElementById('transcriptBox');
 
-        function togglePlayPause() {
-            const v = elements.mainVideo;
-            if (!v.src) return showToast('请先打开视频文件', 'error');
-            if (v.paused) {
-                v.play();
-                elements.playIcon.className = 'fa-solid fa-pause text-sm';
-            } else {
-                v.pause();
-                elements.playIcon.className = 'fa-solid fa-play text-sm ml-0.5';
-            }
-        }
+        // Layout Resizers
+        const waveformResizer = document.getElementById('waveformResizer');
+        const waveformBox = document.getElementById('waveformBox');
+        const panelResizer = document.getElementById('panelResizer');
+        const leftPanel = document.getElementById('leftPanel');
+        const rightPanel = document.getElementById('rightPanel');
 
-        function initMediaListeners() {
-            elements.mediaFileInput.addEventListener('change', e => {
-                if (e.target.files[0]) loadMediaFile(e.target.files[0]);
-            });
+        // Application State
+        let audioBuffer = null;
+        let zoomLevel = 1.0;
+        let pointA = null;
+        let pointB = null;
+        let isLooping = false;
+        let isDraggingAB = null; // 'A' or 'B' or 'SELECT'
+        let dragStartX = 0;
 
-            const v = elements.mainVideo;
-            v.addEventListener('timeupdate', () => {
-                state.currentTime = v.currentTime;
-                if (state.abLoop.enabled && state.abLoop.end !== null && v.currentTime >= state.abLoop.end) {
-                    v.currentTime = state.abLoop.start || 0;
-                }
-                updateTimeDisplay();
+        // Speech Recognition State
+        let recognition = null;
+        let isTranscribing = false;
+
+        // --- 1. Audio Processing & Waveform Extraction ---
+        async function loadVideoAudio(file) {
+            try {
+                const arrayBuffer = await file.arrayBuffer();
+                const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
                 drawWaveform();
-                autoScrollPlayhead();
-            });
-
-            v.addEventListener('loadedmetadata', () => {
-                state.duration = v.duration;
-                updateTimeDisplay();
+            } catch (err) {
+                console.warn('音频轨解析提示：视频可能无音频轨或格式不兼容。', err);
+                audioBuffer = null;
                 drawWaveform();
-            });
-
-            elements.btnPlayPause.addEventListener('click', togglePlayPause);
-            elements.btnSkipBack.addEventListener('click', () => seekTo(v.currentTime - 5));
-            elements.btnSkipForward.addEventListener('click', () => seekTo(v.currentTime + 5));
-            elements.speedSelect.addEventListener('change', e => v.playbackRate = parseFloat(e.target.value));
-            elements.volumeSlider.addEventListener('input', e => v.volume = parseFloat(e.target.value));
-            elements.btnMute.addEventListener('click', () => {
-                v.muted = !v.muted;
-                elements.volumeIcon.className = v.muted ? 'fa-solid fa-volume-xmark text-rose-400' : 'fa-solid fa-volume-high';
-            });
-        }
-
-        function loadMediaFile(file) {
-            if (!file.type.startsWith('video')) {
-                return showToast('请选择正确的视频文件 (MP4 / WebM / MKV 等)', 'error');
             }
-
-            state.mediaFile = file;
-            elements.fileName.innerText = file.name;
-            elements.fileInfoDisplay.classList.remove('hidden');
-
-            const url = URL.createObjectURL(file);
-            elements.mainVideo.src = url;
-            elements.mainVideo.classList.remove('hidden');
-            elements.videoPlaceholder.classList.add('hidden');
-
-            decodeAudioBuffer(file);
-            showToast(`已成功加载视频: ${file.name}`);
-        }
-
-        function seekTo(t) {
-            if (!elements.mainVideo.src) return;
-            const target = Math.max(0, Math.min(state.duration, t));
-            elements.mainVideo.currentTime = target;
-            state.currentTime = target;
-            updateTimeDisplay();
-            drawWaveform();
-            autoScrollPlayhead();
-        }
-
-        function updateTimeDisplay() {
-            elements.timeDisplay.innerText = `${formatTime(state.currentTime)} / ${formatTime(state.duration)}`;
-        }
-
-        function autoScrollPlayhead() {
-            if (!elements.chkAutoScroll.checked || !state.duration) return;
-            const wrapper = elements.waveformWrapper;
-            const canvas = elements.waveformCanvas;
-            const progressRatio = state.currentTime / state.duration;
-            const playheadX = progressRatio * canvas.width;
-            wrapper.scrollLeft = Math.max(0, playheadX - (wrapper.clientWidth / 2));
-        }
-
-        function decodeAudioBuffer(file) {
-            elements.loadingWaveform.classList.remove('hidden');
-            const reader = new FileReader();
-            reader.onload = e => {
-                if (!state.audioContext) state.audioContext = new (window.AudioContext || window.webkitAudioContext)();
-                state.audioContext.decodeAudioData(e.target.result, buffer => {
-                    state.audioBuffer = buffer;
-                    elements.loadingWaveform.classList.add('hidden');
-                    drawWaveform();
-                }, () => {
-                    elements.loadingWaveform.classList.add('hidden');
-                    showToast('音频流解码失败，可能该视频无独立声音轨道', 'error');
-                });
-            };
-            reader.readAsArrayBuffer(file);
-        }
-
-        // --- Waveform Drawing & Drag Handle Interactions ---
-        function initWaveformInteraction() {
-            const canvas = elements.waveformCanvas;
-
-            elements.btnZoomIn.addEventListener('click', () => adjustZoom(1.5));
-            elements.btnZoomOut.addEventListener('click', () => adjustZoom(0.67));
-            elements.btnZoomReset.addEventListener('click', () => { state.zoomLevel = 1.0; updateZoom(); });
-
-            function adjustZoom(factor) {
-                state.zoomLevel = Math.max(1.0, Math.min(20.0, state.zoomLevel * factor));
-                updateZoom();
-            }
-
-            function updateZoom() {
-                elements.zoomLevelDisplay.innerText = `${state.zoomLevel.toFixed(1)}x`;
-                drawWaveform();
-                autoScrollPlayhead();
-            }
-
-            canvas.addEventListener('mousedown', e => {
-                if (!state.duration) return;
-                const rect = canvas.getBoundingClientRect();
-                const mouseX = e.clientX - rect.left;
-                const clickTime = (mouseX / canvas.width) * state.duration;
-
-                const handleRadiusPx = 15;
-                const ax = state.abLoop.start !== null ? (state.abLoop.start / state.duration) * canvas.width : -999;
-                const bx = state.abLoop.end !== null ? (state.abLoop.end / state.duration) * canvas.width : -999;
-
-                if (Math.abs(mouseX - ax) <= handleRadiusPx) {
-                    state.draggingHandle = 'A';
-                } else if (Math.abs(mouseX - bx) <= handleRadiusPx) {
-                    state.draggingHandle = 'B';
-                } else {
-                    state.draggingHandle = 'clickSeek';
-                    seekTo(clickTime);
-                }
-            });
-
-            window.addEventListener('mousemove', e => {
-                const rect = canvas.getBoundingClientRect();
-                const mouseX = Math.max(0, Math.min(canvas.width, e.clientX - rect.left));
-                const hoverTime = (mouseX / canvas.width) * state.duration;
-
-                const ax = state.abLoop.start !== null ? (state.abLoop.start / state.duration) * canvas.width : -999;
-                const bx = state.abLoop.end !== null ? (state.abLoop.end / state.duration) * canvas.width : -999;
-
-                if (Math.abs(mouseX - ax) <= 12 || Math.abs(mouseX - bx) <= 12) {
-                    canvas.style.cursor = 'col-resize';
-                } else {
-                    canvas.style.cursor = 'crosshair';
-                }
-
-                if (!state.draggingHandle || state.draggingHandle === 'clickSeek') return;
-
-                if (state.draggingHandle === 'A') {
-                    setABPoint('start', hoverTime);
-                } else if (state.draggingHandle === 'B') {
-                    setABPoint('end', hoverTime);
-                }
-            });
-
-            window.addEventListener('mouseup', () => {
-                if (state.draggingHandle === 'A' || state.draggingHandle === 'B') {
-                    showToast(`已更新 ${state.draggingHandle} 点选区位置`);
-                }
-                state.draggingHandle = null;
-            });
         }
 
         function drawWaveform() {
-            const canvas = elements.waveformCanvas;
-            const wrapper = elements.waveformWrapper;
-            const ctx = canvas.getContext('2d');
+            const containerWidth = waveformScrollContainer.clientWidth;
+            const canvasWidth = Math.max(containerWidth, containerWidth * zoomLevel);
+            const canvasHeight = waveformScrollContainer.clientHeight || 120;
 
-            canvas.width = wrapper.clientWidth * state.zoomLevel;
-            canvas.height = wrapper.clientHeight;
+            waveformCanvas.width = canvasWidth;
+            waveformCanvas.height = canvasHeight;
 
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            // Clear Background
+            ctx.fillStyle = '#020617'; // slate-950
+            ctx.fillRect(0, 0, canvasWidth, canvasHeight);
 
-            const totalSec = state.duration || 60;
-            const pxPerSec = canvas.width / totalSec;
-
-            // Draw Dynamic Time Grid
-            ctx.strokeStyle = 'rgba(51, 65, 85, 0.3)';
-            ctx.fillStyle = '#64748b';
-            ctx.font = '9px monospace';
-
-            const tickInterval = state.zoomLevel > 5 ? 0.5 : state.zoomLevel > 2 ? 1 : 5;
-            for (let sec = 0; sec <= totalSec; sec += tickInterval) {
-                const x = sec * pxPerSec;
-                ctx.beginPath();
-                ctx.moveTo(x, 0);
-                ctx.lineTo(x, canvas.height);
-                ctx.stroke();
-
-                ctx.fillText(formatTime(sec, false), x + 3, 11);
-            }
-
-            // Draw Audio Waveform Peak Bars
-            if (state.audioBuffer) {
-                const rawData = state.audioBuffer.getChannelData(0);
-                const samples = Math.floor(canvas.width);
-                const blockSize = Math.floor(rawData.length / samples);
-                const progressX = state.duration ? (state.currentTime / state.duration) * canvas.width : 0;
-
-                for (let i = 0; i < samples; i++) {
-                    let sum = 0;
-                    let blockStart = blockSize * i;
-                    for (let j = 0; j < blockSize; j++) {
-                        sum += Math.abs(rawData[blockStart + j] || 0);
-                    }
-                    const avg = sum / blockSize;
-                    const h = Math.max(2, Math.min(canvas.height - 16, avg * canvas.height * 2.2));
-                    const y = (canvas.height - h) / 2;
-
-                    ctx.fillStyle = (i <= progressX) ? '#3b82f6' : '#334155';
-                    ctx.fillRect(i, y, 1, h);
-                }
-
-                // AB Region Highlight
-                if (state.abLoop.start !== null && state.abLoop.end !== null) {
-                    const ax = (state.abLoop.start / state.duration) * canvas.width;
-                    const bx = (state.abLoop.end / state.duration) * canvas.width;
-
-                    ctx.fillStyle = 'rgba(16, 185, 129, 0.15)';
-                    ctx.fillRect(ax, 0, bx - ax, canvas.height);
-
-                    drawHandle(ctx, ax, 'A', '#10b981', canvas.height);
-                    drawHandle(ctx, bx, 'B', '#f43f5e', canvas.height);
-                }
-
-                // Playhead Indicator
-                ctx.fillStyle = '#06b6d4';
-                ctx.fillRect(progressX - 1, 0, 2, canvas.height);
-            }
-        }
-
-        function drawHandle(ctx, x, label, color, height) {
-            ctx.fillStyle = color;
-            ctx.fillRect(x - 1, 0, 2, height);
-
-            const tagW = 20;
-            const tagH = 14;
-            ctx.beginPath();
-            ctx.roundRect(x - tagW / 2, 2, tagW, tagH, 3);
-            ctx.fillStyle = color;
-            ctx.fill();
-
-            ctx.fillStyle = '#ffffff';
-            ctx.font = 'bold 9px monospace';
-            ctx.textAlign = 'center';
-            ctx.fillText(label, x, 12);
-        }
-
-        // --- AB Controls Logic ---
-        function initABLoopControls() {
-            elements.btnClearAB.addEventListener('click', () => {
-                state.abLoop = { start: null, end: null, enabled: false };
-                elements.toggleABLoop.checked = false;
-                updateABDisplay();
-                drawWaveform();
-            });
-
-            elements.toggleABLoop.addEventListener('change', e => {
-                state.abLoop.enabled = e.target.checked;
-                if (state.abLoop.enabled && (state.abLoop.start === null || state.abLoop.end === null)) {
-                    showToast('请先设置 A/B 点选区', 'error');
-                    e.target.checked = false;
-                    state.abLoop.enabled = false;
-                }
-            });
-
-            elements.btnSetCurrentA.addEventListener('click', () => setABPoint('start', state.currentTime));
-            elements.btnSetCurrentB.addEventListener('click', () => setABPoint('end', state.currentTime));
-
-            elements.btnAminus01.addEventListener('click', () => adjustAB('start', -0.1));
-            elements.btnAplus01.addEventListener('click', () => adjustAB('start', 0.1));
-            elements.btnBminus01.addEventListener('click', () => adjustAB('end', -0.1));
-            elements.btnBplus01.addEventListener('click', () => adjustAB('end', 0.1));
-
-            elements.inputA.addEventListener('change', e => setABPoint('start', parseFloat(e.target.value)));
-            elements.inputB.addEventListener('change', e => setABPoint('end', parseFloat(e.target.value)));
-        }
-
-        function setABPoint(pointKey, val) {
-            if (isNaN(val)) return;
-            const time = Math.max(0, Math.min(state.duration, val));
-            state.abLoop[pointKey] = time;
-            state.abLoop.enabled = true;
-            elements.toggleABLoop.checked = true;
-            updateABDisplay();
-            drawWaveform();
-        }
-
-        function adjustAB(key, delta) {
-            if (state.abLoop[key] === null) state.abLoop[key] = state.currentTime;
-            setABPoint(key, state.abLoop[key] + delta);
-        }
-
-        function updateABDisplay() {
-            elements.inputA.value = state.abLoop.start !== null ? state.abLoop.start.toFixed(2) : '';
-            elements.inputB.value = state.abLoop.end !== null ? state.abLoop.end.toFixed(2) : '';
-        }
-
-        // --- Note Editor & Persistence ---
-        function initNoteEditor() {
-            const ed = elements.noteEditor;
-            const saved = localStorage.getItem('av_studio_video_note');
-            if (saved) ed.value = saved;
-
-            ed.addEventListener('input', () => {
-                localStorage.setItem('av_studio_video_note', ed.value);
-                updateTimestampList();
-            });
-
-            elements.btnInsertTimestamp.addEventListener('click', () => {
-                const ts = `[${formatTime(state.currentTime, false)}] `;
-                const start = ed.selectionStart;
-                ed.value = ed.value.substring(0, start) + ts + ed.value.substring(ed.selectionEnd);
-                ed.focus();
-                localStorage.setItem('av_studio_video_note', ed.value);
-                updateTimestampList();
-            });
-
-            elements.noteFileInput.addEventListener('change', e => {
-                const file = e.target.files[0];
-                if (!file) return;
-                const reader = new FileReader();
-                reader.onload = evt => {
-                    ed.value = evt.target.result;
-                    localStorage.setItem('av_studio_video_note', ed.value);
-                    updateTimestampList();
-                    showToast(`已打开本地笔记: ${file.name}`);
-                };
-                reader.readAsText(file);
-            });
-
-            elements.btnSaveNote.addEventListener('click', () => {
-                const b = new Blob([ed.value], { type: 'text/markdown;charset=utf-8' });
-                const a = document.createElement('a');
-                a.href = URL.createObjectURL(b);
-                a.download = 'video_analysis_note.md';
-                a.click();
-            });
-
-            elements.btnClearNote.addEventListener('click', () => {
-                if (confirm('确定要清空笔记内容吗？')) {
-                    ed.value = '';
-                    localStorage.removeItem('av_studio_video_note');
-                    updateTimestampList();
-                }
-            });
-
-            updateTimestampList();
-        }
-
-        function updateTimestampList() {
-            const text = elements.noteEditor.value;
-            const regex = /\[(\d{2}):(\d{2})\]/g;
-            const container = elements.timestampList;
-            let match;
-            const tsArray = [];
-
-            while ((match = regex.exec(text)) !== null) {
-                const sec = parseInt(match[1], 10) * 60 + parseInt(match[2], 10);
-                tsArray.push({ label: match[0], sec });
-            }
-
-            if (tsArray.length === 0) {
-                container.innerHTML = '<span class="text-xs text-slate-600 italic">暂无时间戳...</span>';
+            if (!audioBuffer) {
+                ctx.fillStyle = '#475569';
+                ctx.font = '12px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText('选择或拖入视频后在此呈现极清晰波形', canvasWidth / 2, canvasHeight / 2);
                 return;
             }
 
-            container.innerHTML = '';
-            tsArray.forEach(item => {
-                const btn = document.createElement('button');
-                btn.className = 'px-2 py-0.5 bg-slate-800 hover:bg-blue-600 text-blue-400 hover:text-white rounded text-[11px] font-mono border border-slate-700 transition';
-                btn.innerText = item.label;
-                btn.addEventListener('click', () => seekTo(item.sec));
-                container.appendChild(btn);
-            });
+            const rawData = audioBuffer.getChannelData(0);
+            const totalSamples = rawData.length;
+            const step = Math.ceil(totalSamples / canvasWidth);
+            const midY = canvasHeight / 2;
+
+            // Calculate Peaks & Normalize Amplitude to Fill Container
+            let maxAmp = 0;
+            const peaks = new Float32Array(canvasWidth);
+            for (let i = 0; i < canvasWidth; i++) {
+                let min = 1.0, max = -1.0;
+                const start = i * step;
+                for (let j = 0; j < step && (start + j) < totalSamples; j++) {
+                    const val = rawData[start + j];
+                    if (val < min) min = val;
+                    if (val > max) max = val;
+                }
+                const amp = Math.max(Math.abs(min), Math.abs(max));
+                peaks[i] = amp;
+                if (amp > maxAmp) maxAmp = amp;
+            }
+
+            const scale = maxAmp > 0 ? (midY * 0.85) / maxAmp : midY * 0.85;
+
+            // Draw Clean Normalized Waveform Paths
+            ctx.fillStyle = '#38bdf8'; // sky-400
+            for (let i = 0; i < canvasWidth; i++) {
+                const h = peaks[i] * scale;
+                ctx.fillRect(i, midY - h, 1, h * 2 || 1);
+            }
+
+            // Draw Center Reference Line
+            ctx.strokeStyle = '#1e293b';
+            ctx.beginPath();
+            ctx.moveTo(0, midY);
+            ctx.lineTo(canvasWidth, midY);
+            ctx.stroke();
+
+            // Draw AB Selection Area & Handles
+            const duration = mainVideo.duration || audioBuffer.duration;
+            if (duration > 0) {
+                if (pointA !== null && pointB !== null) {
+                    const xA = (pointA / duration) * canvasWidth;
+                    const xB = (pointB / duration) * canvasWidth;
+                    const startX = Math.min(xA, xB);
+                    const endX = Math.max(xA, xB);
+
+                    // Highlight Range
+                    ctx.fillStyle = 'rgba(14, 165, 233, 0.2)';
+                    ctx.fillRect(startX, 0, endX - startX, canvasHeight);
+
+                    // Line A
+                    ctx.strokeStyle = '#10b981'; // emerald-500
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.moveTo(xA, 0);
+                    ctx.lineTo(xA, canvasHeight);
+                    ctx.stroke();
+
+                    // Handle A
+                    ctx.fillStyle = '#10b981';
+                    ctx.fillRect(xA - 4, 0, 8, 14);
+                    ctx.fillStyle = '#ffffff';
+                    ctx.font = '9px sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.fillText('A', xA, 11);
+
+                    // Line B
+                    ctx.strokeStyle = '#f43f5e'; // rose-500
+                    ctx.beginPath();
+                    ctx.moveTo(xB, 0);
+                    ctx.lineTo(xB, canvasHeight);
+                    ctx.stroke();
+
+                    // Handle B
+                    ctx.fillStyle = '#f43f5e';
+                    ctx.fillRect(xB - 4, 0, 8, 14);
+                    ctx.fillStyle = '#ffffff';
+                    ctx.font = '9px sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.fillText('B', xB, 11);
+                }
+
+                // Draw Current Playhead Indicator
+                const playX = (mainVideo.currentTime / duration) * canvasWidth;
+                ctx.strokeStyle = '#f59e0b'; // amber-500
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(playX, 0);
+                ctx.lineTo(playX, canvasHeight);
+                ctx.stroke();
+            }
         }
 
-        // --- Layout Resizers ---
-        function initResizers() {
-            const resizerH = elements.resizerH;
-            const leftPanel = elements.leftPanel;
-            const mainLayout = elements.mainLayout;
+        // --- 2. Video Player & Progress Interactions ---
+        videoFileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                const url = URL.createObjectURL(file);
+                mainVideo.src = url;
+                loadVideoAudio(file);
+            }
+        });
 
-            let isResizingH = false;
-            resizerH.addEventListener('mousedown', () => {
-                isResizingH = true;
-                resizerH.classList.add('resizing');
-                document.body.style.cursor = 'col-resize';
-            });
+        playPauseBtn.addEventListener('click', togglePlay);
+        mainVideo.addEventListener('click', togglePlay);
 
-            const resizerV1 = elements.resizerV1;
-            const playerBox = elements.playerBox;
-
-            let isResizingV1 = false;
-            resizerV1.addEventListener('mousedown', () => {
-                isResizingV1 = true;
-                resizerV1.classList.add('resizing');
-                document.body.style.cursor = 'row-resize';
-            });
-
-            const resizerWB = elements.resizerWaveformBox;
-            const waveformBox = elements.waveformBox;
-
-            let isResizingWB = false;
-            resizerWB.addEventListener('mousedown', e => {
-                e.stopPropagation();
-                isResizingWB = true;
-                resizerWB.classList.add('resizing');
-                document.body.style.cursor = 'row-resize';
-            });
-
-            window.addEventListener('mousemove', e => {
-                if (isResizingH) {
-                    const newLeftWidth = (e.clientX / mainLayout.clientWidth) * 100;
-                    if (newLeftWidth > 20 && newLeftWidth < 80) leftPanel.style.width = `${newLeftWidth}%`;
-                    drawWaveform();
-                }
-
-                if (isResizingV1) {
-                    const topOffset = leftPanel.getBoundingClientRect().top;
-                    const newH = e.clientY - topOffset;
-                    if (newH > 100 && newH < 600) playerBox.style.height = `${newH}px`;
-                    drawWaveform();
-                }
-
-                if (isResizingWB) {
-                    const boxTop = waveformBox.getBoundingClientRect().top;
-                    const newH = e.clientY - boxTop;
-                    if (newH > 100 && newH < 500) waveformBox.style.height = `${newH}px`;
-                    drawWaveform();
-                }
-            });
-
-            window.addEventListener('mouseup', () => {
-                if (isResizingH || isResizingV1 || isResizingWB) {
-                    isResizingH = isResizingV1 = isResizingWB = false;
-                    resizerH.classList.remove('resizing');
-                    resizerV1.classList.remove('resizing');
-                    resizerWB.classList.remove('resizing');
-                    document.body.style.cursor = 'default';
-                    drawWaveform();
-                }
-            });
+        function togglePlay() {
+            if (mainVideo.paused) {
+                mainVideo.play();
+                playPauseBtn.innerHTML = '<i class="fa-solid fa-pause"></i>';
+            } else {
+                mainVideo.pause();
+                playPauseBtn.innerHTML = '<i class="fa-solid fa-play"></i>';
+            }
         }
 
-        function initDragAndDrop() {
-            window.addEventListener('dragover', e => e.preventDefault());
-            window.addEventListener('drop', e => {
+        mainVideo.addEventListener('timeupdate', () => {
+            const cur = mainVideo.currentTime;
+            const dur = mainVideo.duration || 0;
+
+            // Format Time
+            currentTimeDisplay.textContent = `${formatTime(cur)} / ${formatTime(dur)}`;
+            videoProgressBar.value = dur ? (cur / dur) * 100 : 0;
+
+            // AB Loop Logic
+            if (isLooping && pointA !== null && pointB !== null) {
+                const minAB = Math.min(pointA, pointB);
+                const maxAB = Math.max(pointA, pointB);
+                if (cur >= maxAB || cur < minAB) {
+                    mainVideo.currentTime = minAB;
+                }
+            }
+
+            // Auto-scroll Waveform Container to Follow Playhead
+            if (zoomLevel > 1.0 && dur > 0) {
+                const canvasWidth = waveformCanvas.width;
+                const playX = (cur / dur) * canvasWidth;
+                const containerWidth = waveformScrollContainer.clientWidth;
+                waveformScrollContainer.scrollLeft = playX - containerWidth / 2;
+            }
+
+            drawWaveform();
+        });
+
+        videoProgressBar.addEventListener('input', (e) => {
+            const dur = mainVideo.duration || 0;
+            if (dur) {
+                mainVideo.currentTime = (e.target.value / 100) * dur;
+            }
+        });
+
+        // --- 3. Waveform Zoom & Drag AB Selection ---
+        zoomInBtn.addEventListener('click', () => {
+            zoomLevel = Math.min(20.0, zoomLevel + 1.0);
+            zoomLevelDisplay.textContent = zoomLevel.toFixed(1) + 'x';
+            drawWaveform();
+        });
+
+        zoomOutBtn.addEventListener('click', () => {
+            zoomLevel = Math.max(1.0, zoomLevel - 1.0);
+            zoomLevelDisplay.textContent = zoomLevel.toFixed(1) + 'x';
+            drawWaveform();
+        });
+
+        waveformCanvas.addEventListener('mousedown', (e) => {
+            const rect = waveformCanvas.getBoundingClientRect();
+            const clickX = e.clientX - rect.left;
+            const duration = mainVideo.duration || 0;
+            if (!duration) return;
+
+            const clickTime = (clickX / waveformCanvas.width) * duration;
+
+            if (pointA !== null && pointB !== null) {
+                const xA = (pointA / duration) * waveformCanvas.width;
+                const xB = (pointB / duration) * waveformCanvas.width;
+
+                if (Math.abs(clickX - xA) < 10) {
+                    isDraggingAB = 'A';
+                    return;
+                }
+                if (Math.abs(clickX - xB) < 10) {
+                    isDraggingAB = 'B';
+                    return;
+                }
+            }
+
+            // Otherwise, Start Drag-Selecting
+            isDraggingAB = 'SELECT';
+            dragStartX = clickX;
+            pointA = clickTime;
+            pointB = clickTime;
+            updateABInputs();
+            drawWaveform();
+        });
+
+        window.addEventListener('mousemove', (e) => {
+            if (!isDraggingAB) return;
+            const rect = waveformCanvas.getBoundingClientRect();
+            const currentX = Math.max(0, Math.min(e.clientX - rect.left, waveformCanvas.width));
+            const duration = mainVideo.duration || 0;
+            if (!duration) return;
+
+            const currentTime = (currentX / waveformCanvas.width) * duration;
+
+            if (isDraggingAB === 'A') {
+                pointA = currentTime;
+            } else if (isDraggingAB === 'B') {
+                pointB = currentTime;
+            } else if (isDraggingAB === 'SELECT') {
+                pointB = currentTime;
+            }
+
+            updateABInputs();
+            drawWaveform();
+        });
+
+        window.addEventListener('mouseup', () => {
+            if (isDraggingAB === 'SELECT') {
+                if (Math.abs(pointA - pointB) < 0.2) {
+                    // Single click jump
+                    mainVideo.currentTime = pointA;
+                }
+            }
+            isDraggingAB = null;
+        });
+
+        // AB Points Control Buttons
+        setPointABtn.addEventListener('click', () => {
+            pointA = mainVideo.currentTime;
+            updateABInputs();
+            drawWaveform();
+        });
+
+        setPointBBtn.addEventListener('click', () => {
+            pointB = mainVideo.currentTime;
+            updateABInputs();
+            drawWaveform();
+        });
+
+        toggleLoopBtn.addEventListener('click', () => {
+            isLooping = !isLooping;
+            loopStatusText.textContent = isLooping ? '开' : '关';
+            loopStatusText.className = isLooping ? 'text-emerald-400' : 'text-rose-400';
+        });
+
+        clearABBtn.addEventListener('click', () => {
+            pointA = null;
+            pointB = null;
+            isLooping = false;
+            loopStatusText.textContent = '关';
+            loopStatusText.className = 'text-rose-400';
+            updateABInputs();
+            drawWaveform();
+        });
+
+        function updateABInputs() {
+            inputTimeA.value = pointA !== null ? pointA.toFixed(1) : '0.0';
+            inputTimeB.value = pointB !== null ? pointB.toFixed(1) : '0.0';
+        }
+
+        inputTimeA.addEventListener('change', () => { pointA = parseFloat(inputTimeA.value) || 0; drawWaveform(); });
+        inputTimeB.addEventListener('change', () => { pointB = parseFloat(inputTimeB.value) || 0; drawWaveform(); });
+        aMinusBtn.addEventListener('click', () => { if (pointA !== null) { pointA = Math.max(0, pointA - 0.1); updateABInputs(); drawWaveform(); } });
+        aPlusBtn.addEventListener('click', () => { if (pointA !== null) { pointA += 0.1; updateABInputs(); drawWaveform(); } });
+        bMinusBtn.addEventListener('click', () => { if (pointB !== null) { pointB = Math.max(0, pointB - 0.1); updateABInputs(); drawWaveform(); } });
+        bPlusBtn.addEventListener('click', () => { if (pointB !== null) { pointB += 0.1; updateABInputs(); drawWaveform(); } });
+
+        // --- 4. Global Shortcuts & Keyboard Navigation ---
+        window.addEventListener('keydown', (e) => {
+            if (e.code === 'Space' && document.activeElement !== noteTextarea && document.activeElement.tagName !== 'INPUT') {
                 e.preventDefault();
-                if (e.dataTransfer.files && e.dataTransfer.files[0]) loadMediaFile(e.dataTransfer.files[0]);
-            });
+                togglePlay();
+            }
+        });
+
+        // --- 5. Speech-to-Text (STT) Feature ---
+        if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            recognition = new SpeechRecognition();
+            recognition.continuous = true;
+            recognition.interimResults = true;
+            recognition.lang = 'zh-CN';
+
+            recognition.onresult = (event) => {
+                let interimTranscript = '';
+                for (let i = event.resultIndex; i < event.results.length; ++i) {
+                    if (event.results[i].isFinal) {
+                        const finalText = event.results[i][0].transcript;
+                        appendTranscript(finalText);
+                    }
+                }
+            };
+
+            recognition.onerror = (err) => {
+                console.warn('语音识别事件:', err.error);
+            };
+
+            recognition.onend = () => {
+                if (isTranscribing) recognition.start();
+            };
         }
+
+        toggleSttBtn.addEventListener('click', () => {
+            if (!recognition) {
+                alert('您的浏览器暂不支持 Web Speech 语音识别接口，请使用最新版 Chrome 或 Edge 浏览器。');
+                return;
+            }
+            isTranscribing = !isTranscribing;
+            if (isTranscribing) {
+                recognition.start();
+                sttStatusText.textContent = '识别中...';
+                toggleSttBtn.className = 'px-2.5 py-1 bg-rose-600 hover:bg-rose-500 text-white rounded text-xs flex items-center space-x-1.5 transition';
+            } else {
+                recognition.stop();
+                sttStatusText.textContent = '开启识别';
+                toggleSttBtn.className = 'px-2.5 py-1 bg-sky-600 hover:bg-sky-500 text-white rounded text-xs flex items-center space-x-1.5 transition';
+            }
+        });
+
+        function appendTranscript(text) {
+            const timeStr = formatTime(mainVideo.currentTime);
+            const item = document.createElement('div');
+            item.className = 'flex items-start space-x-1.5 hover:bg-slate-900 p-1 rounded group cursor-pointer';
+            item.innerHTML = `
+                <span class="text-sky-400 font-mono text-[11px] hover:underline">${timeStr}</span>
+                <span class="text-slate-300 flex-1">${text}</span>
+            `;
+            item.querySelector('span').addEventListener('click', () => {
+                const parts = timeStr.split(':');
+                const seconds = parseFloat(parts[0]) * 60 + parseFloat(parts[1]);
+                mainVideo.currentTime = seconds;
+            });
+            transcriptBox.appendChild(item);
+            transcriptBox.scrollTop = transcriptBox.scrollHeight;
+        }
+
+        // --- 6. Notes Management & Export/Import ---
+        insertTimestampBtn.addEventListener('click', () => {
+            const timeStr = `[${formatTime(mainVideo.currentTime)}] `;
+            const start = noteTextarea.selectionStart;
+            const end = noteTextarea.selectionEnd;
+            const text = noteTextarea.value;
+            noteTextarea.value = text.substring(0, start) + timeStr + text.substring(end);
+            noteTextarea.selectionStart = noteTextarea.selectionEnd = start + timeStr.length;
+            noteTextarea.focus();
+            saveLocalNote();
+        });
+
+        noteTextarea.addEventListener('input', () => {
+            saveLocalNote();
+            wordCountText.textContent = `${noteTextarea.value.length} 字`;
+        });
+
+        function saveLocalNote() {
+            localStorage.setItem('studio_note_backup', noteTextarea.value);
+            saveStateText.textContent = '已在本地实时暂存';
+        }
+
+        // Load Stored Note
+        const savedNote = localStorage.getItem('studio_note_backup');
+        if (savedNote) {
+            noteTextarea.value = savedNote;
+            wordCountText.textContent = `${savedNote.length} 字`;
+        }
+
+        // Save / Export Note File
+        exportNoteBtn.addEventListener('click', () => {
+            const content = noteTextarea.value;
+            if (!content.trim()) {
+                alert('笔记内容为空，无法保存。');
+                return;
+            }
+            const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `Video_Note_${new Date().toISOString().slice(0, 10)}.md`;
+            a.click();
+            URL.revokeObjectURL(url);
+        });
+
+        // Import Note File
+        importNoteInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = (evt) => {
+                    noteTextarea.value = evt.target.result;
+                    saveLocalNote();
+                    wordCountText.textContent = `${noteTextarea.value.length} 字`;
+                };
+                reader.readAsText(file);
+            }
+        });
+
+        // --- 7. Resizable Panels Logic ---
+        let isResizingWaveform = false;
+        waveformResizer.addEventListener('mousedown', () => { isResizingWaveform = true; });
+
+        let isResizingPanel = false;
+        panelResizer.addEventListener('mousedown', () => { isResizingPanel = true; });
+
+        window.addEventListener('mousemove', (e) => {
+            if (isResizingWaveform) {
+                const containerRect = leftPanel.getBoundingClientRect();
+                const newHeight = containerRect.bottom - e.clientY;
+                if (newHeight > 100 && newHeight < containerRect.height - 150) {
+                    waveformBox.style.height = `${newHeight}px`;
+                    drawWaveform();
+                }
+            }
+
+            if (isResizingPanel) {
+                const containerWidth = document.getElementById('mainContainer').clientWidth;
+                const newWidth = containerWidth - e.clientX;
+                if (newWidth > 280 && newWidth < containerWidth - 350) {
+                    rightPanel.style.width = `${newWidth}px`;
+                    drawWaveform();
+                }
+            }
+        });
+
+        window.addEventListener('mouseup', () => {
+            isResizingWaveform = false;
+            isResizingPanel = false;
+        });
+
+        // Helper: Format Seconds to MM:SS.s
+        function formatTime(seconds) {
+            if (isNaN(seconds)) return '00:00.0';
+            const m = Math.floor(seconds / 60);
+            const s = (seconds % 60).toFixed(1);
+            const mStr = m < 10 ? '0' + m : m;
+            const sStr = s < 10 ? '0' + s : s;
+            return `${mStr}:${sStr}`;
+        }
+
+        // Initial Canvas Draw
+        window.addEventListener('resize', drawWaveform);
+        drawWaveform();
     </script>
 </body>
 </html>
