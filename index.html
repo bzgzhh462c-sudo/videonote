@@ -272,11 +272,6 @@
         const leftPanel = document.getElementById('leftPanel');
         const rightPanel = document.getElementById('rightPanel');
 
-        // Audio Context for Anti-Click Fade Smoothing
-        let audioContext = null;
-        let gainNode = null;
-        let mediaSource = null;
-
         // Application State
         let audioBuffer = null;
         let zoomLevel = 1.0;
@@ -285,7 +280,7 @@
         let pointB = null;
         let isLooping = false;
 
-        // Mouse Dragging States
+        // Mouse Dragging & Animation Frame Throttle
         let isMouseDown = false;
         let dragMode = null; // 'A', 'B', 'RANGE', 'SELECT'
         let dragStartX = 0;
@@ -293,39 +288,17 @@
         let dragStartB = 0;
         let dragOffsetTimeA = 0;
         let dragRangeDuration = 0;
+        let renderPending = false;
         let currentFileHandle = null;
 
-        // --- Initialize Audio Context with Fade Smoothing ---
-        function initAudioSmooth() {
-            if (!audioContext) {
-                const AudioCtx = window.AudioContext || window.webkitAudioContext;
-                audioContext = new AudioCtx();
-                gainNode = audioContext.createGain();
-                mediaSource = audioContext.createMediaElementSource(mainMedia);
-                mediaSource.connect(gainNode);
-                gainNode.connect(audioContext.destination);
-            }
-            if (audioContext.state === 'suspended') {
-                audioContext.resume();
-            }
-        }
-
-        // Apply Micro-Fade to Eliminate Clicking/Popping Noise
-        function smoothJumpTo(targetTime) {
-            if (gainNode && audioContext) {
-                const now = audioContext.currentTime;
-                gainNode.gain.setValueAtTime(gainNode.gain.value, now);
-                gainNode.gain.linearRampToValueAtTime(0, now + 0.01); // 10ms Fast Fade-Out
-                
-                setTimeout(() => {
-                    mainMedia.currentTime = targetTime;
-                    const resumeTime = audioContext.currentTime;
-                    gainNode.gain.setValueAtTime(0, resumeTime);
-                    gainNode.gain.linearRampToValueAtTime(1, resumeTime + 0.015); // 15ms Smooth Fade-In
-                }, 10);
-            } else {
-                mainMedia.currentTime = targetTime;
-            }
+        // Ultra-Smooth Jump (Pure Hardware Mute/Unmute Ramping to eliminate pops)
+        function cleanJumpTo(targetTime) {
+            const isPaused = mainMedia.paused;
+            mainMedia.muted = true;
+            mainMedia.currentTime = targetTime;
+            setTimeout(() => {
+                mainMedia.muted = false;
+            }, 12);
         }
 
         // --- 1. Audio Processing & Waveform Extraction ---
@@ -334,11 +307,22 @@
                 const arrayBuffer = await file.arrayBuffer();
                 const tempCtx = new (window.AudioContext || window.webkitAudioContext)();
                 audioBuffer = await tempCtx.decodeAudioData(arrayBuffer);
-                drawWaveform();
+                requestDrawWaveform();
             } catch (err) {
                 console.warn('音频轨解析提示：文件可能无音频轨或格式不兼容。', err);
                 audioBuffer = null;
-                drawWaveform();
+                requestDrawWaveform();
+            }
+        }
+
+        // Request animation frame to eliminate drag latency
+        function requestDrawWaveform() {
+            if (!renderPending) {
+                renderPending = true;
+                requestAnimationFrame(() => {
+                    drawWaveform();
+                    renderPending = false;
+                });
             }
         }
 
@@ -470,9 +454,9 @@
             }
         });
 
-        playPauseBtn.addEventListener('click', () => { initAudioSmooth(); togglePlay(); });
-        mainMedia.addEventListener('click', () => { initAudioSmooth(); togglePlay(); });
-        audioPlaceholder.addEventListener('click', () => { initAudioSmooth(); togglePlay(); });
+        playPauseBtn.addEventListener('click', togglePlay);
+        mainMedia.addEventListener('click', togglePlay);
+        audioPlaceholder.addEventListener('click', togglePlay);
 
         function togglePlay() {
             if (mainMedia.paused) {
@@ -491,10 +475,10 @@
             currentTimeDisplay.textContent = `${formatTime(cur)} / ${formatTime(dur)}`;
             mediaProgressBar.value = dur ? (cur / dur) * 100 : 0;
 
-            // Strict AB Loop Check with Micro-Fade Smoothing to Eliminate Pop Noise
+            // Strict AB Loop Check with Hardware Mute Smooth Jumping
             if (isLooping && pointA !== null && pointB !== null && pointA < pointB) {
                 if (cur >= pointB || cur < pointA) {
-                    smoothJumpTo(pointA);
+                    cleanJumpTo(pointA);
                 }
             }
 
@@ -505,28 +489,27 @@
                 waveformScrollContainer.scrollLeft = playX - containerWidth / 2;
             }
 
-            drawWaveform();
+            requestDrawWaveform();
         });
 
         mediaProgressBar.addEventListener('input', (e) => {
             const dur = mainMedia.duration || 0;
             if (dur) {
-                initAudioSmooth();
-                smoothJumpTo((e.target.value / 100) * dur);
+                cleanJumpTo((e.target.value / 100) * dur);
             }
         });
 
-        // --- 3. Waveform Zoom & Mouse Selection ---
+        // --- 3. Waveform Zoom & Non-Blocking Dragging ---
         zoomInBtn.addEventListener('click', () => {
             zoomLevel = Math.min(20.0, zoomLevel + 1.0);
             zoomLevelDisplay.textContent = zoomLevel.toFixed(1) + 'x';
-            drawWaveform();
+            requestDrawWaveform();
         });
 
         zoomOutBtn.addEventListener('click', () => {
             zoomLevel = Math.max(1.0, zoomLevel - 1.0);
             zoomLevelDisplay.textContent = zoomLevel.toFixed(1) + 'x';
-            drawWaveform();
+            requestDrawWaveform();
         });
 
         toggleAutoScrollBtn.addEventListener('click', () => {
@@ -536,7 +519,6 @@
         });
 
         waveformCanvas.addEventListener('mousedown', (e) => {
-            initAudioSmooth();
             isMouseDown = true;
             dragStartX = e.clientX;
             const rect = waveformCanvas.getBoundingClientRect();
@@ -612,7 +594,7 @@
 
             enforceABConstraint();
             updateABInputs();
-            drawWaveform();
+            requestDrawWaveform();
         });
 
         window.addEventListener('mouseup', (e) => {
@@ -627,7 +609,7 @@
                     const clickTime = (clickX / waveformCanvas.width) * duration;
                     pointA = clickTime;
                     pointB = Math.min(duration, clickTime + 1.0);
-                    smoothJumpTo(clickTime);
+                    cleanJumpTo(clickTime);
                 }
             }
 
@@ -639,7 +621,7 @@
             dragMode = null;
             enforceABConstraint();
             updateABInputs();
-            drawWaveform();
+            requestDrawWaveform();
         });
 
         function enforceABConstraint() {
@@ -669,7 +651,7 @@
             loopStatusText.textContent = '关';
             loopStatusText.className = 'text-rose-400';
             updateABInputs();
-            drawWaveform();
+            requestDrawWaveform();
         });
 
         function updateABInputs() {
@@ -681,26 +663,25 @@
             pointA = parseFloat(inputTimeA.value) || 0; 
             enforceABConstraint();
             updateABInputs();
-            drawWaveform(); 
+            requestDrawWaveform(); 
         });
 
         inputTimeB.addEventListener('change', () => { 
             pointB = parseFloat(inputTimeB.value) || 0; 
             enforceABConstraint();
             updateABInputs();
-            drawWaveform(); 
+            requestDrawWaveform(); 
         });
 
-        aMinusBtn.addEventListener('click', () => { if (pointA !== null) { pointA = Math.max(0, pointA - 0.1); enforceABConstraint(); updateABInputs(); drawWaveform(); } });
-        aPlusBtn.addEventListener('click', () => { if (pointA !== null) { pointA += 0.1; enforceABConstraint(); updateABInputs(); drawWaveform(); } });
-        bMinusBtn.addEventListener('click', () => { if (pointB !== null) { pointB = Math.max(pointA + 0.1, pointB - 0.1); enforceABConstraint(); updateABInputs(); drawWaveform(); } });
-        bPlusBtn.addEventListener('click', () => { if (pointB !== null) { pointB += 0.1; enforceABConstraint(); updateABInputs(); drawWaveform(); } });
+        aMinusBtn.addEventListener('click', () => { if (pointA !== null) { pointA = Math.max(0, pointA - 0.1); enforceABConstraint(); updateABInputs(); requestDrawWaveform(); } });
+        aPlusBtn.addEventListener('click', () => { if (pointA !== null) { pointA += 0.1; enforceABConstraint(); updateABInputs(); requestDrawWaveform(); } });
+        bMinusBtn.addEventListener('click', () => { if (pointB !== null) { pointB = Math.max(pointA + 0.1, pointB - 0.1); enforceABConstraint(); updateABInputs(); requestDrawWaveform(); } });
+        bPlusBtn.addEventListener('click', () => { if (pointB !== null) { pointB += 0.1; enforceABConstraint(); updateABInputs(); requestDrawWaveform(); } });
 
         // --- 4. Global Shortcuts ---
         window.addEventListener('keydown', (e) => {
             if (e.code === 'Space' && document.activeElement !== noteTextarea && document.activeElement.tagName !== 'INPUT') {
                 e.preventDefault();
-                initAudioSmooth();
                 togglePlay();
             }
             if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
@@ -832,7 +813,7 @@
                 const newHeight = containerRect.bottom - e.clientY;
                 if (newHeight > 100 && newHeight < containerRect.height - 150) {
                     waveformBox.style.height = `${newHeight}px`;
-                    drawWaveform();
+                    requestDrawWaveform();
                 }
             }
 
@@ -841,7 +822,7 @@
                 const newWidth = containerWidth - e.clientX;
                 if (newWidth > 280 && newWidth < containerWidth - 350) {
                     rightPanel.style.width = `${newWidth}px`;
-                    drawWaveform();
+                    requestDrawWaveform();
                 }
             }
         });
@@ -862,8 +843,8 @@
         }
 
         // Initial Canvas Draw
-        window.addEventListener('resize', drawWaveform);
-        drawWaveform();
+        window.addEventListener('resize', requestDrawWaveform);
+        requestDrawWaveform();
     </script>
 </body>
 </html>
