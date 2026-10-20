@@ -325,6 +325,8 @@
     }
     function playMedia(offset = 0) {
   previewTime = null;
+
+  // ========== 视频模式 ==========
   if (isVideoMode) {
     if (!mainVideo.src) return;
     if (isLooping && pointA !== null && pointB !== null && pointA < pointB) {
@@ -339,42 +341,72 @@
     return;
   }
 
-  // ========== 纯音频部分（修复没声音） ==========
-  if (!audioBuffer) return;
+  // ========== 纯音频模式（强化版） ==========
+  if (!audioBuffer) {
+    console.warn('audioBuffer 为空，无法播放');
+    return;
+  }
 
-  const startAudio = () => {
-    stopAudioSource();
-    sourceNode = audioCtx.createBufferSource();
-    sourceNode.buffer = audioBuffer;
-    if (isLooping && pointA !== null && pointB !== null && pointA < pointB) {
-      if (offset < pointA || offset >= pointB) offset = pointA;
-      sourceNode.loop = true;
-      sourceNode.loopStart = pointA;
-      sourceNode.loopEnd = pointB;
-    } else {
-      sourceNode.loop = false;
-    }
-    sourceNode.connect(audioCtx.destination);
-    sourceNode.start(0, offset);
-    startTime = audioCtx.currentTime - offset;
-    isPlaying = true;
-    playPauseBtn.innerHTML = '<i class="fa-solid fa-pause"></i>';
-    sourceNode.onended = () => {
-      if (!isLooping && isPlaying) {
-        stopPlayback();
-        pauseOffset = 0;
+  // 确保 AudioContext 存在
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+
+  const doStart = () => {
+    try {
+      stopAudioSource();
+
+      sourceNode = audioCtx.createBufferSource();
+      sourceNode.buffer = audioBuffer;
+
+      if (isLooping && pointA !== null && pointB !== null && pointA < pointB) {
+        if (offset < pointA || offset >= pointB) offset = pointA;
+        sourceNode.loop = true;
+        sourceNode.loopStart = pointA;
+        sourceNode.loopEnd = pointB;
+      } else {
+        sourceNode.loop = false;
       }
-    };
-    startProgressLoop();
+
+      sourceNode.connect(audioCtx.destination);
+      sourceNode.start(0, Math.max(0, offset));
+
+      startTime = audioCtx.currentTime - offset;
+      isPlaying = true;
+      playPauseBtn.innerHTML = '<i class="fa-solid fa-pause"></i>';
+
+      sourceNode.onended = () => {
+        if (!isLooping && isPlaying) {
+          stopPlayback();
+          pauseOffset = 0;
+        }
+      };
+
+      startProgressLoop();
+      console.log('纯音频开始播放', { offset, state: audioCtx.state });
+    } catch (err) {
+      console.error('纯音频启动失败:', err);
+    }
   };
 
-  if (audioCtx.state === 'suspended') {
-    audioCtx.resume().then(startAudio).catch(err => {
-      console.warn('AudioContext resume failed', err);
-      startAudio(); // 兜底
+  // 关键：强制 resume，并等待真正 running
+  if (audioCtx.state === 'suspended' || audioCtx.state === 'interrupted') {
+    audioCtx.resume().then(() => {
+      // 再确认一次状态
+      if (audioCtx.state === 'running') {
+        doStart();
+      } else {
+        // 极端情况再试一次
+        setTimeout(() => {
+          audioCtx.resume().then(doStart).catch(doStart);
+        }, 50);
+      }
+    }).catch(err => {
+      console.warn('AudioContext resume 失败，尝试直接播放', err);
+      doStart();
     });
   } else {
-    startAudio();
+    doStart();
   }
 }
     function stopAudioSource() {
