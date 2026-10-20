@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AudioVisualizer Studio Pro - 精准工作站</title>
+    <title>AudioVisualizer Studio Pro - 极速精准版</title>
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -47,7 +47,7 @@
                 <i class="fa-solid fa-volume-high text-lg"></i>
             </div>
             <h1 class="text-base font-bold bg-gradient-to-r from-sky-400 to-blue-500 bg-clip-text text-transparent">
-                AudioVisualizer Studio Pro <span class="text-xs px-2 py-0.5 rounded bg-sky-950 text-sky-400 border border-sky-800">Precision Engine</span>
+                AudioVisualizer Studio Pro <span class="text-xs px-2 py-0.5 rounded bg-sky-950 text-sky-400 border border-sky-800">Precision Pro</span>
             </h1>
         </div>
 
@@ -104,7 +104,7 @@
                 </div>
             </div>
 
-            <!-- Waveform Resizer Bar (Adjustable Height) -->
+            <!-- Waveform Resizer Bar -->
             <div id="waveformResizer" class="resizer-h flex items-center justify-center border-y border-slate-700/50 shrink-0">
                 <div class="w-8 h-1 bg-slate-500 rounded-full"></div>
             </div>
@@ -158,7 +158,7 @@
                         <button id="aMinusBtn" class="px-1.5 py-0.5 bg-slate-800 rounded hover:bg-slate-700">-0.1s</button>
                         <button id="aPlusBtn" class="px-1.5 py-0.5 bg-slate-800 rounded hover:bg-slate-700">+0.1s</button>
                     </div>
-                    <div class="text-slate-500 text-[10px]">单击设A点(+3s为B) | 拖拽划选 | 按住中间平移</div>
+                    <div class="text-slate-500 text-[10px]">单击设A点(+3s为B) | 拖拽把手单独微调 | 按选区平移</div>
                     <div class="flex items-center space-x-2">
                         <span class="text-rose-400">B 点:</span>
                         <input type="number" id="inputTimeB" step="0.1" min="0" value="0.0" class="w-16 bg-slate-950 border border-slate-700 rounded px-1 text-rose-400">
@@ -169,7 +169,7 @@
             </div>
         </div>
 
-        <!-- Vertical Split Resizer (Adjustable Width) -->
+        <!-- Vertical Split Resizer -->
         <div id="panelResizer" class="resizer-v hidden md:block border-x border-slate-700/50 shrink-0"></div>
 
         <!-- Right Panel: Note Editor -->
@@ -190,7 +190,7 @@
             </div>
 
             <div class="h-8 bg-slate-950 border-t border-slate-800 px-3 flex items-center justify-between text-[11px] text-slate-500">
-                <span id="saveStateText" class="text-amber-400/80">未绑定文件（保存将自动生成本地笔记文件）</span>
+                <span id="saveStateText" class="text-amber-400/80">未绑定文件（点击“打开/绑定本地文件”后按 ⌘S 直接覆写）</span>
                 <span id="wordCountText">0 字</span>
             </div>
         </div>
@@ -259,7 +259,7 @@
 
         let rawChannelData = null;
         let isMouseDown = false;
-        let dragMode = null;
+        let dragMode = null; // 'A', 'B', 'RANGE', 'SELECT'
         let dragStartX = 0;
         let dragStartA = 0;
         let dragStartB = 0;
@@ -470,6 +470,7 @@
                     ctx.fillRect(startX, 0, endX - startX, 2);
                     ctx.fillRect(startX, canvasHeight - 2, endX - startX, 2);
 
+                    // Line & Handle A
                     ctx.strokeStyle = '#10b981';
                     ctx.lineWidth = 2;
                     ctx.beginPath();
@@ -478,12 +479,13 @@
                     ctx.stroke();
 
                     ctx.fillStyle = '#10b981';
-                    ctx.fillRect(xA - 5, 0, 10, 16);
+                    ctx.fillRect(xA - 7, 0, 14, 18);
                     ctx.fillStyle = '#ffffff';
                     ctx.font = 'bold 10px sans-serif';
                     ctx.textAlign = 'center';
-                    ctx.fillText('A', xA, 12);
+                    ctx.fillText('A', xA, 13);
 
+                    // Line & Handle B
                     ctx.strokeStyle = '#f43f5e';
                     ctx.beginPath();
                     ctx.moveTo(xB, 0);
@@ -491,11 +493,11 @@
                     ctx.stroke();
 
                     ctx.fillStyle = '#f43f5e';
-                    ctx.fillRect(xB - 5, 0, 10, 16);
+                    ctx.fillRect(xB - 7, 0, 14, 18);
                     ctx.fillStyle = '#ffffff';
                     ctx.font = 'bold 10px sans-serif';
                     ctx.textAlign = 'center';
-                    ctx.fillText('B', xB, 12);
+                    ctx.fillText('B', xB, 13);
                 }
 
                 const playX = (getCurrentTime() / duration) * canvasWidth;
@@ -513,15 +515,15 @@
             }
         }
 
-        // --- 4. Precise Click Offset Fix & 3s Rule ---
+        // --- 4. Precise Click & Dragging Logic (Independent Handles + Range Move) ---
         function getCanvasTimeFromEvent(e) {
             const rect = waveformCanvas.getBoundingClientRect();
-            // Critical Fix: Add scrollLeft offset to map screen pixel accurately
-            const scrollLeft = waveformScrollContainer.scrollLeft;
-            const clickX = (e.clientX - rect.left) + scrollLeft;
+            // Get actual CSS pixel width regardless of Retina DPR
+            const cssWidth = waveformCanvas.clientWidth;
+            const clickX = (e.clientX - rect.left);
             const duration = mediaDuration;
-            if (!duration) return 0;
-            return Math.max(0, Math.min(duration, (clickX / (waveformCanvas.width / (window.devicePixelRatio || 1))) * duration));
+            if (!duration || cssWidth === 0) return 0;
+            return Math.max(0, Math.min(duration, (clickX / cssWidth) * duration));
         }
 
         zoomInBtn.addEventListener('click', () => { zoomLevel = Math.min(20.0, zoomLevel + 1.0); zoomLevelDisplay.textContent = zoomLevel.toFixed(1) + 'x'; requestDrawWaveform(); });
@@ -534,16 +536,18 @@
             if (!mediaDuration) return;
 
             const clickTime = getCanvasTimeFromEvent(e);
-            const canvasWidth = waveformCanvas.width / (window.devicePixelRatio || 1);
-            const scrollLeft = waveformScrollContainer.scrollLeft;
-            const clickX = (e.clientX - waveformCanvas.getBoundingClientRect().left) + scrollLeft;
+            const cssWidth = waveformCanvas.clientWidth;
+            const clickX = e.clientX - waveformCanvas.getBoundingClientRect().left;
 
             if (pointA !== null && pointB !== null) {
-                const xA = (pointA / mediaDuration) * canvasWidth;
-                const xB = (pointB / mediaDuration) * canvasWidth;
+                const xA = (pointA / mediaDuration) * cssWidth;
+                const xB = (pointB / mediaDuration) * cssWidth;
 
-                if (Math.abs(clickX - xA) < 12) { dragMode = 'A'; return; }
-                if (Math.abs(clickX - xB) < 12) { dragMode = 'B'; return; }
+                // Independent Handle A Drag Detection (Width 16px)
+                if (Math.abs(clickX - xA) <= 12) { dragMode = 'A'; return; }
+                // Independent Handle B Drag Detection (Width 16px)
+                if (Math.abs(clickX - xB) <= 12) { dragMode = 'B'; return; }
+                // Middle Selection Area Move
                 if (clickX > Math.min(xA, xB) && clickX < Math.max(xA, xB)) {
                     dragMode = 'RANGE';
                     dragOffsetTimeA = clickTime - pointA;
@@ -560,14 +564,13 @@
         window.addEventListener('mousemove', (e) => {
             if (!mediaDuration) return;
             const currentTime = getCanvasTimeFromEvent(e);
-            const canvasWidth = waveformCanvas.width / (window.devicePixelRatio || 1);
-            const scrollLeft = waveformScrollContainer.scrollLeft;
-            const currentX = (e.clientX - waveformCanvas.getBoundingClientRect().left) + scrollLeft;
+            const cssWidth = waveformCanvas.clientWidth;
+            const currentX = e.clientX - waveformCanvas.getBoundingClientRect().left;
 
             if (!isMouseDown && pointA !== null && pointB !== null) {
-                const xA = (pointA / mediaDuration) * canvasWidth;
-                const xB = (pointB / mediaDuration) * canvasWidth;
-                if (Math.abs(currentX - xA) < 12 || Math.abs(currentX - xB) < 12) {
+                const xA = (pointA / mediaDuration) * cssWidth;
+                const xB = (pointB / mediaDuration) * cssWidth;
+                if (Math.abs(currentX - xA) <= 12 || Math.abs(currentX - xB) <= 12) {
                     waveformCanvas.style.cursor = 'col-resize';
                 } else if (currentX > Math.min(xA, xB) && currentX < Math.max(xA, xB)) {
                     waveformCanvas.style.cursor = 'grab';
@@ -578,9 +581,11 @@
 
             if (!isMouseDown || !dragMode) return;
 
-            if (dragMode === 'A') pointA = Math.min(currentTime, pointB - 0.1);
-            else if (dragMode === 'B') pointB = Math.max(currentTime, pointA + 0.1);
-            else if (dragMode === 'RANGE') {
+            if (dragMode === 'A') {
+                pointA = Math.min(currentTime, pointB - 0.1);
+            } else if (dragMode === 'B') {
+                pointB = Math.max(currentTime, pointA + 0.1);
+            } else if (dragMode === 'RANGE') {
                 let newA = currentTime - dragOffsetTimeA;
                 if (newA < 0) newA = 0;
                 if (newA + dragRangeDuration > mediaDuration) newA = mediaDuration - dragRangeDuration;
@@ -604,7 +609,7 @@
                 if (mediaDuration > 0) {
                     const clickTime = getCanvasTimeFromEvent(e);
                     pointA = clickTime;
-                    pointB = Math.min(mediaDuration, clickTime + 3.0); // Exact 3s gap
+                    pointB = Math.min(mediaDuration, clickTime + 3.0); // Exact 3-second gap
                     seekAudio(clickTime);
                 }
             }
@@ -652,7 +657,7 @@
         bMinusBtn.addEventListener('click', () => { if (pointB !== null) { pointB = Math.max(pointA + 0.1, pointB - 0.1); updateABInputs(); if(isPlaying)playAudio(getCurrentTime()); requestDrawWaveform(); } });
         bPlusBtn.addEventListener('click', () => { if (pointB !== null) { pointB += 0.1; enforceABConstraint(); updateABInputs(); if(isPlaying)playAudio(getCurrentTime()); requestDrawWaveform(); } });
 
-        // --- 5. Robust Universal File Open/Save System ---
+        // --- 5. Robust File System & Silent Cmd+S Overwrite ---
         window.addEventListener('keydown', (e) => {
             if (e.code === 'Space' && document.activeElement !== noteTextarea && document.activeElement.tagName !== 'INPUT') {
                 e.preventDefault();
@@ -664,7 +669,7 @@
             }
         });
 
-        // Trigger Note File Opening (Supports Chrome, Edge, Safari, Firefox)
+        // Open Native Local File with Locked File Handle
         openNativeFileBtn.addEventListener('click', async () => {
             if ('showOpenFilePicker' in window) {
                 try {
@@ -675,14 +680,13 @@
                     const text = await file.text();
                     noteTextarea.value = text;
                     wordCountText.textContent = `${text.length} 字`;
-                    saveStateText.textContent = `已成功绑定原文件: ${file.name}`;
+                    saveStateText.textContent = `已成功绑定原文件: ${file.name} (按 ⌘S 即可直接静默保存)`;
                     saveStateText.className = 'text-emerald-400 font-semibold';
                     saveBtnText.textContent = '覆写保存 (⌘S)';
                 } catch (e) {
-                    console.log('用户取消选择');
+                    console.log('取消选择');
                 }
             } else {
-                // Fallback for Safari & Firefox
                 fallbackNoteFileInput.click();
             }
         });
@@ -706,17 +710,17 @@
             const content = noteTextarea.value;
             const timeNow = new Date().toLocaleTimeString();
 
-            // Native Chrome/Edge Silent Overwrite
+            // Direct Silent Overwrite If Handle Exists
             if (currentFileHandle) {
                 try {
                     const writable = await currentFileHandle.createWritable();
                     await writable.write(content);
                     await writable.close();
-                    saveStateText.textContent = `已于 ${timeNow} 成功覆写保存至: ${currentFileHandle.name}`;
+                    saveStateText.textContent = `已于 ${timeNow} 静默覆写保存至: ${currentFileHandle.name}`;
                     saveStateText.className = 'text-emerald-400 font-semibold';
                     return;
                 } catch (e) {
-                    console.warn('覆写失败，尝试切换导出');
+                    console.warn('句柄权限失效，切换保存框');
                 }
             }
 
@@ -735,9 +739,8 @@
                 }
             }
 
-            // Universal Fallback for Safari/Firefox
             downloadTextFile(content, loadedFileName || `Note_${new Date().toISOString().slice(0, 10)}.txt`);
-            saveStateText.textContent = `已于 ${timeNow} 成功导出到本地下载`;
+            saveStateText.textContent = `已于 ${timeNow} 导出下载`;
             saveStateText.className = 'text-emerald-400 font-semibold';
         }
 
@@ -763,9 +766,14 @@
             noteTextarea.focus();
         });
 
+        // Debounced Input Handler to eliminate typing lag completely
+        let debounceTimer = null;
         noteTextarea.addEventListener('input', () => {
-            localStorage.setItem('local_note_backup', noteTextarea.value);
             wordCountText.textContent = `${noteTextarea.value.length} 字`;
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(() => {
+                localStorage.setItem('local_note_backup', noteTextarea.value);
+            }, 300);
         });
 
         const savedNote = localStorage.getItem('local_note_backup');
