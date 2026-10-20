@@ -431,49 +431,75 @@ function safeVideoSeek(time, onDone) {
   isSeekingVideo = true;
 
   const wasPlaying = !mainVideo.paused && isPlaying;
-  const originalVolume = mainVideo.volume;
+  const originalVolume = mainVideo.volume || 1;
   const target = Math.max(0, Math.min(mediaDuration || mainVideo.duration || 0, time));
 
-  // 已经很接近就跳过
-  if (Math.abs(mainVideo.currentTime - target) < 0.03) {
+  // 已经非常接近就跳过
+  if (Math.abs(mainVideo.currentTime - target) < 0.025) {
     isSeekingVideo = false;
     if (typeof onDone === 'function') onDone();
     else if (wasPlaying) mainVideo.play().catch(() => {});
     return;
   }
 
-  // 强制静音 + 暂停
+  // 1. 强制静音 + 音量归零 + 暂停
   mainVideo.muted = true;
   mainVideo.volume = 0;
   mainVideo.pause();
   mainVideo.currentTime = target;
 
   let finished = false;
+
   const finish = () => {
     if (finished) return;
     finished = true;
 
-    // 给解码器更长的稳定时间（针对尖锐噪声）
+    // 2. 先保持静音状态，给解码器更长稳定时间
     setTimeout(() => {
-      mainVideo.volume = originalVolume;
+      isSeekingVideo = false;
+      updateProgress();
+      requestDrawWaveform();
 
-      // 再等两帧才取消 muted
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
+      const startPlay = () => {
+        // 播放前确保还是静音的
+        mainVideo.muted = true;
+        mainVideo.volume = 0;
+
+        mainVideo.play().then(() => {
+          // 3. 播放开始后再做短时间音量淡入（关键！消除延迟噪声）
+          let vol = 0;
+          const fadeSteps = 8;          // 分 8 步淡入
+          const fadeInterval = 25;      // 每步 25ms，总共约 200ms
+          const step = originalVolume / fadeSteps;
+
+          const fadeTimer = setInterval(() => {
+            vol += step;
+            if (vol >= originalVolume) {
+              vol = originalVolume;
+              clearInterval(fadeTimer);
+              mainVideo.muted = false;  // 淡入完成后再取消 muted
+            }
+            mainVideo.volume = vol;
+          }, fadeInterval);
+        }).catch(e => {
+          console.warn('play after seek failed', e);
+          // 失败就直接恢复
+          mainVideo.volume = originalVolume;
           mainVideo.muted = false;
-          isSeekingVideo = false;
-          updateProgress();
-          requestDrawWaveform();
-
-          if (typeof onDone === 'function') {
-            onDone();
-          } else if (wasPlaying) {
-            // 播放前再确保一次静音状态已解除
-            mainVideo.play().catch(e => console.warn('resume after seek', e));
-          }
         });
-      });
-    }, 80); // 可以试 60~100，数值越大噪声越少但延迟稍增
+      };
+
+      if (typeof onDone === 'function') {
+        // playMedia 调用时会走这里
+        onDone();
+      } else if (wasPlaying) {
+        startPlay();
+      } else {
+        // 只是定位，不播放，也要恢复音量状态
+        mainVideo.volume = originalVolume;
+        mainVideo.muted = false;
+      }
+    }, 100); // 稳定等待时间，可调 80~150
   };
 
   const onSeeked = () => {
@@ -485,7 +511,7 @@ function safeVideoSeek(time, onDone) {
   mainVideo.addEventListener('seeked', onSeeked);
 
   // 超时兜底
-  setTimeout(finish, 280);
+  setTimeout(finish, 320);
 }
     function seekMedia(targetTime) {
       const t = Math.max(0, Math.min(mediaDuration || 99999, targetTime));
