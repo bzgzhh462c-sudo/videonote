@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AudioVisualizer Studio Pro - 极速精准版</title>
+  <title>AudioVisualizer</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
@@ -64,7 +64,6 @@
       <input type="file" id="fallbackNoteFileInput" accept=".txt,.md,.markdown,text/plain" class="hidden">
     </div>
   </header>
-
   <!-- Main Layout -->
   <div id="mainContainer" class="flex-1 flex flex-col md:flex-row overflow-hidden relative">
     <div id="leftPanel" class="flex-1 flex flex-col min-w-[320px] bg-slate-900/50 overflow-hidden">
@@ -84,11 +83,9 @@
           <input type="range" id="mediaProgressBar" value="0" step="0.001" min="0" max="100" class="flex-1 accent-sky-500 bg-slate-700 h-1.5 rounded cursor-pointer">
         </div>
       </div>
-
       <div id="waveformResizer" class="resizer-h flex items-center justify-center border-y border-slate-700/50 shrink-0">
         <div class="w-8 h-1 bg-slate-500 rounded-full"></div>
       </div>
-
       <div id="waveformBox" class="h-48 bg-slate-950 flex flex-col border-t border-slate-800 shrink-0 relative">
         <div class="h-9 bg-slate-900 border-b border-slate-800 flex items-center justify-between px-3 text-xs shrink-0">
           <div class="flex items-center space-x-2">
@@ -117,11 +114,9 @@
             </button>
           </div>
         </div>
-
         <div id="waveformScrollContainer" class="flex-1 overflow-x-auto overflow-y-hidden relative waveform-container bg-slate-950">
           <canvas id="waveformCanvas" class="h-full block cursor-crosshair"></canvas>
         </div>
-
         <div class="h-8 bg-slate-900/80 border-t border-slate-800/80 flex items-center justify-between px-3 text-xs font-mono shrink-0">
           <div class="flex items-center space-x-2">
             <span class="text-emerald-400">A 点:</span>
@@ -139,9 +134,7 @@
         </div>
       </div>
     </div>
-
     <div id="panelResizer" class="resizer-v hidden md:block border-x border-slate-700/50 shrink-0"></div>
-
     <div id="rightPanel" class="w-full md:w-[420px] flex flex-col bg-slate-900 shrink-0 border-l border-slate-800">
       <div class="p-3 bg-slate-900 border-b border-slate-800 flex items-center justify-between">
         <div class="flex items-center space-x-2">
@@ -162,7 +155,6 @@
       </div>
     </div>
   </div>
-
   <script>
     // ========== DOM ==========
     const mediaFileInput = document.getElementById('mediaFileInput');
@@ -203,7 +195,6 @@
     const panelResizer = document.getElementById('panelResizer');
     const leftPanel = document.getElementById('leftPanel');
     const rightPanel = document.getElementById('rightPanel');
-
     // ========== State ==========
     let audioCtx = null;
     let audioBuffer = null;
@@ -218,11 +209,9 @@
     let pointB = null;
     let isLooping = false;
     let rawChannelData = null;
-
     let isVideoMode = false;
     let mediaObjectURL = null;
     let isSeekingVideo = false;
-
     let isMouseDown = false;
     let dragMode = null;
     let dragStartX = 0;
@@ -231,17 +220,15 @@
     let dragRangeDuration = 0;
     let dragPlayheadOffset = 0;
     let previewTime = null;
-
     let currentFileHandle = null;   // 核心：绑定的可写文件句柄
     let loadedFileName = '';
-
     let waveformCache = null;
     let cacheWidth = 0;
     let cacheHeight = 0;
     let cacheZoom = 0;
     let renderPending = false;
     let progressRAF = null;
-
+    let noteSaveTimer = null; // 笔记防抖定时器
     // ========== 1. Load Media ==========
     async function loadMediaFile(file) {
       try {
@@ -258,10 +245,8 @@
         mediaDuration = 0;
         previewTime = null;
         isSeekingVideo = false;
-
         const isVideo = file.type.startsWith('video/') ||
           /\.(mp4|webm|mov|mkv|m4v|avi)$/i.test(file.name);
-
         const arrayBuffer = await file.arrayBuffer();
         if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         try {
@@ -272,9 +257,7 @@
           console.warn('音频解码失败:', decodeErr);
           if (!isVideo) throw decodeErr;
         }
-
         mediaFileName.textContent = file.name;
-
         if (isVideo) {
           isVideoMode = true;
           mediaObjectURL = URL.createObjectURL(file);
@@ -298,7 +281,6 @@
           audioCoverBox.classList.remove('hidden');
           audioCoverBox.classList.add('flex');
         }
-
         invalidateWaveformCache();
         requestDrawWaveform();
         updateProgress();
@@ -307,16 +289,13 @@
         alert('无法解析该文件，请尝试其他 mp3 / wav / mp4 / webm 格式。');
       }
     }
-
     mediaFileInput.addEventListener('change', (e) => {
       const file = e.target.files[0];
       if (file) loadMediaFile(file);
     });
-
     // ========== 2. Playback ==========
     function getCurrentTime() {
       if (previewTime !== null) return previewTime;
-
       if (isVideoMode) {
         let cur = mainVideo.currentTime || 0;
         if (isLooping && pointA !== null && pointB !== null && pointA < pointB && !isMouseDown) {
@@ -337,7 +316,6 @@
       }
       return Math.min(mediaDuration, Math.max(0, cur));
     }
-
     function playMedia(offset = 0) {
       previewTime = null;
       if (isVideoMode) {
@@ -379,14 +357,12 @@
       };
       startProgressLoop();
     }
-
     function stopAudioSource() {
       if (sourceNode) {
         try { sourceNode.stop(); sourceNode.disconnect(); } catch (e) {}
         sourceNode = null;
       }
     }
-
     function stopPlayback() {
       if (isVideoMode) {
         mainVideo.pause();
@@ -397,43 +373,60 @@
       playPauseBtn.innerHTML = '<i class="fa-solid fa-play"></i>';
       stopProgressLoop();
     }
-
+    // ========== 优化后的安全视频 Seek（pause + mute，尽量减少噪声与延迟） ==========
     function safeVideoSeek(time, onDone) {
       if (!isVideoMode) return;
       if (isSeekingVideo) return;
       isSeekingVideo = true;
 
+      const wasPlaying = !mainVideo.paused && isPlaying;
       const wasMuted = mainVideo.muted;
-      mainVideo.muted = true;
-      mainVideo.currentTime = time;
+      const target = Math.max(0, Math.min(mediaDuration || mainVideo.duration || 0, time));
 
+      // 已经非常接近目标时间，直接跳过 seek，减少不必要延迟
+      if (Math.abs(mainVideo.currentTime - target) < 0.05) {
+        isSeekingVideo = false;
+        if (typeof onDone === 'function') onDone();
+        else if (wasPlaying) mainVideo.play().catch(() => {});
+        return;
+      }
+
+      mainVideo.pause();
+      mainVideo.muted = true;
+      mainVideo.currentTime = target;
+
+      let finished = false;
       const finish = () => {
+        if (finished) return;
+        finished = true;
         mainVideo.muted = wasMuted;
         isSeekingVideo = false;
         updateProgress();
         requestDrawWaveform();
-        if (typeof onDone === 'function') onDone();
+
+        if (typeof onDone === 'function') {
+          onDone();
+        } else if (wasPlaying) {
+          mainVideo.play().catch(e => console.warn('resume after seek', e));
+        }
       };
 
       const onSeeked = () => {
         mainVideo.removeEventListener('seeked', onSeeked);
-        finish();
+        // 双 rAF 给浏览器一点时间真正准备好音频，再 unmute，进一步降低爆音概率
+        requestAnimationFrame(() => {
+          requestAnimationFrame(finish);
+        });
       };
       mainVideo.addEventListener('seeked', onSeeked);
 
-      setTimeout(() => {
-        if (isSeekingVideo) {
-          mainVideo.removeEventListener('seeked', onSeeked);
-          finish();
-        }
-      }, 250);
+      // 超时兜底（现代浏览器通常很快，180ms 足够）
+      setTimeout(finish, 180);
     }
-
     function seekMedia(targetTime) {
       const t = Math.max(0, Math.min(mediaDuration || 99999, targetTime));
       pauseOffset = t;
       previewTime = null;
-
       if (isVideoMode) {
         safeVideoSeek(t);
       } else {
@@ -445,7 +438,6 @@
         }
       }
     }
-
     function togglePlay() {
       if (isVideoMode) {
         if (!mainVideo.src) return;
@@ -465,11 +457,9 @@
         playMedia(pauseOffset);
       }
     }
-
     playPauseBtn.addEventListener('click', togglePlay);
     audioCoverBox.addEventListener('click', togglePlay);
     mainVideo.addEventListener('click', togglePlay);
-
     mainVideo.addEventListener('timeupdate', () => {
       if (!isVideoMode || !isPlaying || isMouseDown || isSeekingVideo) return;
       if (isLooping && pointA !== null && pointB !== null && pointA < pointB) {
@@ -478,14 +468,12 @@
         }
       }
     });
-
     mainVideo.addEventListener('ended', () => {
       if (!isLooping) {
         stopPlayback();
         pauseOffset = 0;
       }
     });
-
     mainVideo.addEventListener('play', () => {
       isPlaying = true;
       playPauseBtn.innerHTML = '<i class="fa-solid fa-pause"></i>';
@@ -499,7 +487,6 @@
         stopProgressLoop();
       }
     });
-
     function startProgressLoop() {
       stopProgressLoop();
       function loop() {
@@ -510,26 +497,22 @@
       }
       progressRAF = requestAnimationFrame(loop);
     }
-
     function stopProgressLoop() {
       if (progressRAF) {
         cancelAnimationFrame(progressRAF);
         progressRAF = null;
       }
     }
-
     function updateProgress() {
       const cur = getCurrentTime();
       const dur = mediaDuration || (isVideoMode ? mainVideo.duration : 0) || 0;
       currentTimeDisplay.textContent = `${formatTime(cur)} / ${formatTime(dur)}`;
       mediaProgressBar.value = dur ? (cur / dur) * 100 : 0;
     }
-
     mediaProgressBar.addEventListener('input', (e) => {
       const dur = mediaDuration || (isVideoMode ? mainVideo.duration : 0);
       if (dur) seekMedia((e.target.value / 100) * dur);
     });
-
     // ========== 3. Waveform ==========
     function invalidateWaveformCache() {
       waveformCache = null;
@@ -537,7 +520,6 @@
       cacheHeight = 0;
       cacheZoom = 0;
     }
-
     function buildWaveformCache(canvasWidth, canvasHeight) {
       const dpr = window.devicePixelRatio || 1;
       const off = document.createElement('canvas');
@@ -545,10 +527,8 @@
       off.height = canvasHeight * dpr;
       const octx = off.getContext('2d');
       octx.scale(dpr, dpr);
-
       octx.fillStyle = '#020617';
       octx.fillRect(0, 0, canvasWidth, canvasHeight);
-
       if (!rawChannelData) {
         octx.fillStyle = '#475569';
         octx.font = '13px sans-serif';
@@ -560,12 +540,10 @@
         cacheZoom = zoomLevel;
         return;
       }
-
       const midY = canvasHeight / 2;
       const maxBarHeight = midY * 0.88;
       const totalSamples = rawChannelData.length;
       const step = Math.max(1, Math.ceil(totalSamples / canvasWidth));
-
       octx.fillStyle = '#38bdf8';
       for (let i = 0; i < canvasWidth; i++) {
         let min = 1.0, max = -1.0;
@@ -580,19 +558,16 @@
         const h = amp * maxBarHeight;
         octx.fillRect(i, midY - h, 1, Math.max(1, h * 2));
       }
-
       octx.strokeStyle = '#1e293b';
       octx.beginPath();
       octx.moveTo(0, midY);
       octx.lineTo(canvasWidth, midY);
       octx.stroke();
-
       waveformCache = off;
       cacheWidth = canvasWidth;
       cacheHeight = canvasHeight;
       cacheZoom = zoomLevel;
     }
-
     function requestDrawWaveform() {
       if (renderPending) return;
       renderPending = true;
@@ -601,13 +576,11 @@
         renderPending = false;
       });
     }
-
     function drawWaveform() {
       const containerWidth = waveformScrollContainer.clientWidth;
       const canvasWidth = Math.max(containerWidth, Math.floor(containerWidth * zoomLevel));
       const canvasHeight = waveformScrollContainer.clientHeight || 120;
       const dpr = window.devicePixelRatio || 1;
-
       if (waveformCanvas.width !== canvasWidth * dpr || waveformCanvas.height !== canvasHeight * dpr) {
         waveformCanvas.width = canvasWidth * dpr;
         waveformCanvas.height = canvasHeight * dpr;
@@ -615,13 +588,10 @@
         waveformCanvas.style.height = canvasHeight + 'px';
       }
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-
       if (!waveformCache || cacheWidth !== canvasWidth || cacheHeight !== canvasHeight || cacheZoom !== zoomLevel) {
         buildWaveformCache(canvasWidth, canvasHeight);
       }
-
       ctx.drawImage(waveformCache, 0, 0, canvasWidth, canvasHeight);
-
       const duration = mediaDuration || (isVideoMode ? mainVideo.duration : 0) || 0;
       if (duration > 0) {
         if (pointA !== null && pointB !== null) {
@@ -629,13 +599,11 @@
           const xB = (pointB / duration) * canvasWidth;
           const startX = Math.min(xA, xB);
           const endX = Math.max(xA, xB);
-
           ctx.fillStyle = 'rgba(14, 165, 233, 0.25)';
           ctx.fillRect(startX, 0, endX - startX, canvasHeight);
           ctx.fillStyle = '#0284c7';
           ctx.fillRect(startX, 0, endX - startX, 2);
           ctx.fillRect(startX, canvasHeight - 2, endX - startX, 2);
-
           ctx.strokeStyle = '#10b981';
           ctx.lineWidth = 2;
           ctx.beginPath();
@@ -648,7 +616,6 @@
           ctx.font = 'bold 10px sans-serif';
           ctx.textAlign = 'center';
           ctx.fillText('A', xA, 13);
-
           ctx.strokeStyle = '#f43f5e';
           ctx.beginPath();
           ctx.moveTo(xB, 0);
@@ -661,7 +628,6 @@
           ctx.textAlign = 'center';
           ctx.fillText('B', xB, 13);
         }
-
         const playX = (getCurrentTime() / duration) * canvasWidth;
         ctx.strokeStyle = '#f59e0b';
         ctx.lineWidth = 2;
@@ -669,7 +635,6 @@
         ctx.moveTo(playX, 0);
         ctx.lineTo(playX, canvasHeight);
         ctx.stroke();
-
         if (isAutoScrollEnabled && zoomLevel > 1.0 && isPlaying && previewTime === null) {
           const viewW = waveformScrollContainer.clientWidth;
           const target = playX - viewW / 2;
@@ -680,7 +645,6 @@
         }
       }
     }
-
     // ========== 4. Zoom & Drag ==========
     zoomInBtn.addEventListener('click', () => {
       zoomLevel = Math.min(20.0, zoomLevel + 1.0);
@@ -694,13 +658,11 @@
       invalidateWaveformCache();
       requestDrawWaveform();
     });
-
     toggleAutoScrollBtn.addEventListener('click', () => {
       isAutoScrollEnabled = !isAutoScrollEnabled;
       autoScrollStatusText.textContent = isAutoScrollEnabled ? '开' : '关';
       autoScrollStatusText.className = isAutoScrollEnabled ? 'text-emerald-400' : 'text-rose-400';
     });
-
     function getCanvasTimeFromEvent(e) {
       const rect = waveformCanvas.getBoundingClientRect();
       const cssWidth = waveformCanvas.clientWidth;
@@ -709,7 +671,6 @@
       if (!duration || cssWidth === 0) return 0;
       return Math.max(0, Math.min(duration, (clickX / cssWidth) * duration));
     }
-
     waveformCanvas.addEventListener('mousedown', (e) => {
       isMouseDown = true;
       dragStartX = e.clientX;
@@ -719,7 +680,6 @@
       const cssWidth = waveformCanvas.clientWidth;
       const clickX = e.clientX - waveformCanvas.getBoundingClientRect().left;
       const curPlay = getCurrentTime();
-
       if (pointA !== null && pointB !== null) {
         const xA = (pointA / duration) * cssWidth;
         const xB = (pointB / duration) * cssWidth;
@@ -747,14 +707,12 @@
       dragStartA = clickTime;
       previewTime = clickTime;
     });
-
     window.addEventListener('mousemove', (e) => {
       const duration = mediaDuration || (isVideoMode ? mainVideo.duration : 0) || 0;
       if (!duration) return;
       const currentTime = getCanvasTimeFromEvent(e);
       const cssWidth = waveformCanvas.clientWidth;
       const currentX = e.clientX - waveformCanvas.getBoundingClientRect().left;
-
       if (!isMouseDown && pointA !== null && pointB !== null) {
         const xA = (pointA / duration) * cssWidth;
         const xB = (pointB / duration) * cssWidth;
@@ -766,9 +724,7 @@
           waveformCanvas.style.cursor = 'crosshair';
         }
       }
-
       if (!isMouseDown || !dragMode) return;
-
       if (dragMode === 'A') {
         pointA = Math.min(currentTime, pointB - 0.1);
         previewTime = pointA;
@@ -791,12 +747,10 @@
       updateABInputs();
       requestDrawWaveform();
     });
-
     window.addEventListener('mouseup', (e) => {
       if (!isMouseDown) return;
       const moveDist = Math.abs(e.clientX - dragStartX);
       const duration = mediaDuration || (isVideoMode ? mainVideo.duration : 0) || 0;
-
       if (dragMode === 'SELECT' && moveDist < 5) {
         if (duration > 0) {
           const clickTime = getCanvasTimeFromEvent(e);
@@ -805,12 +759,10 @@
           previewTime = clickTime;
         }
       }
-
       if (previewTime !== null) {
         seekMedia(previewTime);
       }
       previewTime = null;
-
       if (dragMode === 'RANGE') waveformCanvas.style.cursor = 'grab';
       isMouseDown = false;
       dragMode = null;
@@ -821,7 +773,6 @@
       }
       requestDrawWaveform();
     });
-
     function enforceABConstraint() {
       if (pointA !== null && pointB !== null) {
         if (pointB < pointA) {
@@ -830,14 +781,12 @@
         if (pointB - pointA < 0.1) pointB = pointA + 0.1;
       }
     }
-
     toggleLoopBtn.addEventListener('click', () => {
       isLooping = !isLooping;
       loopStatusText.textContent = isLooping ? '开' : '关';
       loopStatusText.className = isLooping ? 'text-emerald-400' : 'text-rose-400';
       if (isPlaying && !isVideoMode) playMedia(getCurrentTime());
     });
-
     clearABBtn.addEventListener('click', () => {
       pointA = null;
       pointB = null;
@@ -849,12 +798,10 @@
       if (isPlaying && !isVideoMode) playMedia(getCurrentTime());
       requestDrawWaveform();
     });
-
     function updateABInputs() {
       inputTimeA.value = pointA !== null ? pointA.toFixed(1) : '0.0';
       inputTimeB.value = pointB !== null ? pointB.toFixed(1) : '0.0';
     }
-
     inputTimeA.addEventListener('change', () => {
       pointA = parseFloat(inputTimeA.value) || 0;
       enforceABConstraint();
@@ -869,7 +816,6 @@
       if (isPlaying && !isVideoMode) playMedia(getCurrentTime());
       requestDrawWaveform();
     });
-
     aMinusBtn.addEventListener('click', () => {
       if (pointA !== null) {
         pointA = Math.max(0, pointA - 0.1);
@@ -905,9 +851,7 @@
         requestDrawWaveform();
       }
     });
-
-    // ========== 5. 笔记保存（完全参考 Gemini 的简洁可靠写法） ==========
-    // 快捷键（与 Gemini 完全一致，最稳定）
+    // ========== 5. 笔记保存 ==========
     window.addEventListener('keydown', (e) => {
       if (e.code === 'Space' && document.activeElement !== noteTextarea && document.activeElement.tagName !== 'INPUT') {
         e.preventDefault();
@@ -918,8 +862,6 @@
         saveNoteDirectly();
       }
     });
-
-    // 打开/绑定本地文件（参考 Gemini）
     openNativeFileBtn.addEventListener('click', async () => {
       if ('showOpenFilePicker' in window) {
         try {
@@ -932,7 +874,6 @@
           const text = await file.text();
           noteTextarea.value = text;
           wordCountText.textContent = `${text.length} 字`;
-
           const timeNow = new Date().toLocaleTimeString();
           saveStateText.textContent = `已成功绑定原文件: ${handle.name} (时间: ${timeNow})`;
           saveStateText.className = 'text-emerald-400 font-semibold';
@@ -941,12 +882,9 @@
           console.log('用户取消选择或授权未通过');
         }
       } else {
-        // 非 Chromium 浏览器回退
         fallbackNoteFileInput.click();
       }
     });
-
-    // 传统文件选择回退
     fallbackNoteFileInput.addEventListener('change', (e) => {
       const file = e.target.files[0];
       if (!file) return;
@@ -963,29 +901,21 @@
       reader.readAsText(file);
       e.target.value = '';
     });
-
-    // 核心保存函数（完全参考 Gemini 的逻辑）
     async function saveNoteDirectly() {
       const content = noteTextarea.value;
       const timeNow = new Date().toLocaleTimeString();
-
-      // 场景1：已绑定句柄 → 直接静默覆写
       if (currentFileHandle) {
         try {
           const writable = await currentFileHandle.createWritable();
           await writable.write(content);
           await writable.close();
-
           saveStateText.textContent = `已于 ${timeNow} 成功保存至: ${currentFileHandle.name}`;
           saveStateText.className = 'text-emerald-400 font-semibold';
           return;
         } catch (err) {
           console.warn('保存遇到阻碍，重新申请文件窗口:', err);
-          // 继续往下走，弹出另存为
         }
       }
-
-      // 场景2：未绑定 或 句柄失效 → 弹出另存为（并绑定新句柄）
       if ('showSaveFilePicker' in window) {
         try {
           currentFileHandle = await window.showSaveFilePicker({
@@ -995,7 +925,6 @@
           const writable = await currentFileHandle.createWritable();
           await writable.write(content);
           await writable.close();
-
           loadedFileName = currentFileHandle.name;
           saveStateText.textContent = `已绑定并于 ${timeNow} 成功保存至: ${currentFileHandle.name}`;
           saveStateText.className = 'text-emerald-400 font-semibold';
@@ -1004,11 +933,9 @@
           // 用户取消
         }
       } else {
-        // 最终兜底：下载
         exportDownloadFallback(content);
       }
     }
-
     function exportDownloadFallback(content) {
       const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' });
       const url = URL.createObjectURL(blob);
@@ -1020,14 +947,11 @@
       saveStateText.textContent = `已于 ${new Date().toLocaleTimeString()} 导出下载`;
       saveStateText.className = 'text-emerald-400 font-semibold';
     }
-
     saveNoteBtn.addEventListener('click', saveNoteDirectly);
-
     saveAsNoteBtn.addEventListener('click', async () => {
-      currentFileHandle = null;   // 强制走另存为
+      currentFileHandle = null;
       await saveNoteDirectly();
     });
-
     insertTimestampBtn.addEventListener('click', () => {
       const timeStr = `[${formatTime(getCurrentTime())}] `;
       const start = noteTextarea.selectionStart;
@@ -1037,15 +961,16 @@
       noteTextarea.focus();
       wordCountText.textContent = `${noteTextarea.value.length} 字`;
     });
-
-    // 输入时本地备份 + 字数
+    // 输入时：字数实时更新 + localStorage 防抖保存（消除输入延迟）
     noteTextarea.addEventListener('input', () => {
       wordCountText.textContent = `${noteTextarea.value.length} 字`;
-      try {
-        localStorage.setItem('local_note_backup', noteTextarea.value);
-      } catch (e) {}
+      if (noteSaveTimer) clearTimeout(noteSaveTimer);
+      noteSaveTimer = setTimeout(() => {
+        try {
+          localStorage.setItem('local_note_backup', noteTextarea.value);
+        } catch (e) {}
+      }, 300);
     });
-
     // 恢复备份
     try {
       const savedNote = localStorage.getItem('local_note_backup');
@@ -1054,13 +979,11 @@
         wordCountText.textContent = `${savedNote.length} 字`;
       }
     } catch (e) {}
-
     // ========== 6. Resizers ==========
     let isResizingH = false;
     waveformResizer.addEventListener('mousedown', (e) => { isResizingH = true; e.preventDefault(); });
     let isResizingV = false;
     panelResizer.addEventListener('mousedown', (e) => { isResizingV = true; e.preventDefault(); });
-
     window.addEventListener('mousemove', (e) => {
       if (isResizingH) {
         const containerRect = leftPanel.getBoundingClientRect();
@@ -1080,19 +1003,16 @@
       }
     });
     window.addEventListener('mouseup', () => { isResizingH = false; isResizingV = false; });
-
     function formatTime(sec) {
       if (isNaN(sec) || sec == null) return '00:00.0';
       const m = Math.floor(sec / 60);
       const s = (sec % 60).toFixed(1);
       return `${m < 10 ? '0' + m : m}:${s < 10 ? '0' + s : s}`;
     }
-
     window.addEventListener('resize', () => {
       invalidateWaveformCache();
       requestDrawWaveform();
     });
-
     requestDrawWaveform();
   </script>
 </body>
