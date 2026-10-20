@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AudioVisualizer Studio Pro - 零延迟无噪声工作站</title>
+    <title>AudioVisualizer Studio Pro - 完美工作站</title>
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -32,8 +32,10 @@
         ::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
         ::-webkit-scrollbar-thumb:hover { background: #64748b; }
         .waveform-container { user-select: none; touch-action: none; }
-        .resizer-h { cursor: row-resize; height: 6px; }
-        .resizer-v { cursor: col-resize; width: 6px; }
+        .resizer-h { cursor: row-resize; height: 6px; background: #1e293b; }
+        .resizer-h:hover { background: #0284c7; }
+        .resizer-v { cursor: col-resize; width: 6px; background: #1e293b; }
+        .resizer-v:hover { background: #0284c7; }
     </style>
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen h-screen flex flex-col font-sans overflow-hidden select-none">
@@ -45,7 +47,7 @@
                 <i class="fa-solid fa-volume-high text-lg"></i>
             </div>
             <h1 class="text-base font-bold bg-gradient-to-r from-sky-400 to-blue-500 bg-clip-text text-transparent">
-                AudioVisualizer Studio Pro <span class="text-xs px-2 py-0.5 rounded bg-sky-950 text-sky-400 border border-sky-800">Pro Looper Engine</span>
+                AudioVisualizer Studio Pro <span class="text-xs px-2 py-0.5 rounded bg-sky-950 text-sky-400 border border-sky-800">Ultimate Engine</span>
             </h1>
         </div>
 
@@ -83,11 +85,11 @@
             <div id="mediaContainer" class="flex-1 bg-black flex items-center justify-center relative overflow-hidden group">
                 <video id="mainVideo" class="max-h-full max-w-full object-contain hidden"></video>
 
-                <div id="audioCoverBox" class="flex flex-col items-center justify-center space-y-3 text-slate-500">
+                <div id="audioCoverBox" class="flex flex-col items-center justify-center space-y-3 text-slate-500 cursor-pointer w-full h-full">
                     <div class="w-20 h-20 rounded-full bg-slate-900 border border-slate-800 flex items-center justify-center shadow-2xl">
                         <i class="fa-solid fa-music text-3xl text-sky-400 animate-pulse"></i>
                     </div>
-                    <span id="mediaFileName" class="text-sm font-medium text-slate-400">请打开音频或视频文件开始分析</span>
+                    <span id="mediaFileName" class="text-sm font-medium text-slate-400">点击此处或上方按钮打开音视频文件</span>
                 </div>
                 
                 <!-- Custom Floating Controls Overlay -->
@@ -100,18 +102,18 @@
                 </div>
             </div>
 
-            <!-- Waveform Resizer Bar -->
-            <div id="waveformResizer" class="resizer-h bg-slate-800 hover:bg-sky-500 transition-colors flex items-center justify-center border-y border-slate-700/50">
-                <div class="w-8 h-1 bg-slate-600 rounded-full"></div>
+            <!-- Waveform Resizer Bar (Adjustable Height) -->
+            <div id="waveformResizer" class="resizer-h flex items-center justify-center border-y border-slate-700/50 shrink-0">
+                <div class="w-8 h-1 bg-slate-500 rounded-full"></div>
             </div>
 
             <!-- Waveform & Controls Region -->
             <div id="waveformBox" class="h-48 bg-slate-950 flex flex-col border-t border-slate-800 shrink-0 relative">
                 
                 <!-- Waveform Toolbar -->
-                <div class="h-9 bg-slate-900 border-b border-slate-800 flex items-center justify-between px-3 text-xs">
+                <div class="h-9 bg-slate-900 border-b border-slate-800 flex items-center justify-between px-3 text-xs shrink-0">
                     <div class="flex items-center space-x-2">
-                        <span class="text-slate-400 font-medium"><i class="fa-solid fa-wave-square text-sky-400 mr-1"></i>波形:</span>
+                        <span class="text-slate-400 font-medium"><i class="fa-solid fa-wave-square text-sky-400 mr-1"></i>高清波形:</span>
                         <button id="zoomOutBtn" class="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded text-slate-200">
                             <i class="fa-solid fa-magnifying-glass-minus"></i> 缩小
                         </button>
@@ -147,14 +149,14 @@
                 </div>
 
                 <!-- AB Precision Fine Tuning Bar -->
-                <div class="h-8 bg-slate-900/80 border-t border-slate-800/80 flex items-center justify-between px-3 text-xs font-mono">
+                <div class="h-8 bg-slate-900/80 border-t border-slate-800/80 flex items-center justify-between px-3 text-xs font-mono shrink-0">
                     <div class="flex items-center space-x-2">
                         <span class="text-emerald-400">A 点:</span>
                         <input type="number" id="inputTimeA" step="0.1" min="0" value="0.0" class="w-16 bg-slate-950 border border-slate-700 rounded px-1 text-emerald-400">
                         <button id="aMinusBtn" class="px-1.5 py-0.5 bg-slate-800 rounded hover:bg-slate-700">-0.1s</button>
                         <button id="aPlusBtn" class="px-1.5 py-0.5 bg-slate-800 rounded hover:bg-slate-700">+0.1s</button>
                     </div>
-                    <div class="text-slate-500 text-[10px]">单击设A点(+1s为B) | 拖拽划选 | 按住中间平移</div>
+                    <div class="text-slate-500 text-[10px]">单击设A点(+3s为B) | 拖拽划选 | 按住中间平移</div>
                     <div class="flex items-center space-x-2">
                         <span class="text-rose-400">B 点:</span>
                         <input type="number" id="inputTimeB" step="0.1" min="0" value="0.0" class="w-16 bg-slate-950 border border-slate-700 rounded px-1 text-rose-400">
@@ -165,8 +167,8 @@
             </div>
         </div>
 
-        <!-- Vertical Split Resizer -->
-        <div id="panelResizer" class="resizer-v bg-slate-800 hover:bg-sky-500 transition-colors hidden md:block border-x border-slate-700/50"></div>
+        <!-- Vertical Split Resizer (Adjustable Width) -->
+        <div id="panelResizer" class="resizer-v hidden md:block border-x border-slate-700/50 shrink-0"></div>
 
         <!-- Right Panel: Note Editor -->
         <div id="rightPanel" class="w-full md:w-[420px] flex flex-col bg-slate-900 shrink-0 border-l border-slate-800">
@@ -231,6 +233,13 @@
         const saveStateText = document.getElementById('saveStateText');
         const wordCountText = document.getElementById('wordCountText');
 
+        // Layout Resizers Elements
+        const waveformResizer = document.getElementById('waveformResizer');
+        const waveformBox = document.getElementById('waveformBox');
+        const panelResizer = document.getElementById('panelResizer');
+        const leftPanel = document.getElementById('leftPanel');
+        const rightPanel = document.getElementById('rightPanel');
+
         // Web Audio API Native Looping Engine
         let audioCtx = null;
         let audioBuffer = null;
@@ -246,7 +255,7 @@
         let pointB = null;
         let isLooping = false;
 
-        let waveformCache = null;
+        let rawChannelData = null; // High-res raw channel data for crisp crisp rendering
         let isMouseDown = false;
         let dragMode = null;
         let dragStartX = 0;
@@ -257,7 +266,7 @@
         let renderPending = false;
         let currentFileHandle = null;
 
-        // --- 1. Load Audio & Build Cache ---
+        // --- 1. Load Audio & High-Res Storage ---
         async function loadMediaFile(file) {
             try {
                 stopAudio();
@@ -266,13 +275,13 @@
                 
                 audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
                 mediaDuration = audioBuffer.duration;
+                rawChannelData = audioBuffer.getChannelData(0); // Keep raw data for sharp rendering
                 
                 mediaFileName.textContent = file.name;
                 audioCoverBox.classList.remove('hidden');
                 audioCoverBox.classList.add('flex');
                 mainVideo.classList.add('hidden');
 
-                buildWaveformCache(audioBuffer);
                 requestDrawWaveform();
                 updateProgress();
             } catch (err) {
@@ -281,35 +290,12 @@
             }
         }
 
-        function buildWaveformCache(buf) {
-            const rawData = buf.getChannelData(0);
-            const totalSamples = rawData.length;
-            const cacheBins = 2500;
-            const step = Math.ceil(totalSamples / cacheBins);
-            waveformCache = new Float32Array(cacheBins);
-
-            let maxAmp = 0;
-            for (let i = 0; i < cacheBins; i++) {
-                let max = 0;
-                const start = i * step;
-                for (let j = 0; j < step && (start + j) < totalSamples; j++) {
-                    const val = Math.abs(rawData[start + j]);
-                    if (val > max) max = val;
-                }
-                waveformCache[i] = max;
-                if (max > maxAmp) maxAmp = max;
-            }
-            if (maxAmp > 0) {
-                for (let i = 0; i < cacheBins; i++) { waveformCache[i] /= maxAmp; }
-            }
-        }
-
         mediaFileInput.addEventListener('change', (e) => {
             const file = e.target.files[0];
             if (file) loadMediaFile(file);
         });
 
-        // --- 2. Hardware Native Web Audio Playback Engine (Zero Noise, Zero Lag) ---
+        // --- 2. Hardware Native Web Audio Playback Engine ---
         function playAudio(offset = 0) {
             if (!audioBuffer) return;
             if (audioCtx.state === 'suspended') audioCtx.resume();
@@ -319,7 +305,6 @@
             sourceNode = audioCtx.createBufferSource();
             sourceNode.buffer = audioBuffer;
 
-            // Handle AB Loop natively via Web Audio API loop properties
             if (isLooping && pointA !== null && pointB !== null && pointA < pointB) {
                 if (offset < pointA || offset >= pointB) offset = pointA;
                 sourceNode.loop = true;
@@ -360,7 +345,6 @@
             let cur = audioCtx.currentTime - startTime;
             if (isLooping && pointA !== null && pointB !== null && pointA < pointB) {
                 if (cur >= pointB) {
-                    // Loop wrap around calculation
                     const len = pointB - pointA;
                     cur = pointA + ((cur - pointA) % len);
                 }
@@ -411,7 +395,7 @@
             }
         });
 
-        // --- 3. Waveform Rendering ---
+        // --- 3. Ultra-Crisp High-Resolution Waveform Rendering ---
         function requestDrawWaveform() {
             if (!renderPending) {
                 renderPending = true;
@@ -427,32 +411,45 @@
             const canvasWidth = Math.max(containerWidth, containerWidth * zoomLevel);
             const canvasHeight = waveformScrollContainer.clientHeight || 120;
 
-            waveformCanvas.width = canvasWidth;
-            waveformCanvas.height = canvasHeight;
+            // Retina High-DPI crisp rendering fix
+            const dpr = window.devicePixelRatio || 1;
+            waveformCanvas.width = canvasWidth * dpr;
+            waveformCanvas.height = canvasHeight * dpr;
+            waveformCanvas.style.width = canvasWidth + 'px';
+            waveformCanvas.style.height = canvasHeight + 'px';
 
+            ctx.scale(dpr, dpr);
             ctx.fillStyle = '#020617';
             ctx.fillRect(0, 0, canvasWidth, canvasHeight);
 
-            if (!waveformCache) {
+            if (!rawChannelData) {
                 ctx.fillStyle = '#475569';
-                ctx.font = '12px sans-serif';
+                ctx.font = '13px sans-serif';
                 ctx.textAlign = 'center';
-                ctx.fillText('请点击上方打开音频文件，此处将呈现极速高清无噪音波形', canvasWidth / 2, canvasHeight / 2);
+                ctx.fillText('请点击上方打开音频文件，此处将呈现极清晰高清波形', canvasWidth / 2, canvasHeight / 2);
                 return;
             }
 
             const midY = canvasHeight / 2;
-            const maxBarHeight = midY * 0.85;
-            const cacheBins = waveformCache.length;
+            const maxBarHeight = midY * 0.88;
+            const totalSamples = rawChannelData.length;
+            const step = Math.ceil(totalSamples / canvasWidth);
 
-            ctx.fillStyle = '#38bdf8';
+            ctx.fillStyle = '#38bdf8'; // Crisp sky-400 waveform
             for (let i = 0; i < canvasWidth; i++) {
-                const cacheIdx = Math.floor((i / canvasWidth) * cacheBins);
-                const amp = waveformCache[cacheIdx] || 0;
+                let min = 1.0, max = -1.0;
+                const start = i * step;
+                for (let j = 0; j < step && (start + j) < totalSamples; j++) {
+                    const val = rawChannelData[start + j];
+                    if (val < min) min = val;
+                    if (val > max) max = val;
+                }
+                const amp = Math.max(Math.abs(min), Math.abs(max));
                 const h = amp * maxBarHeight;
-                ctx.fillRect(i, midY - h, 1, h * 2 || 1);
+                ctx.fillRect(i, midY - h, 1, Math.max(1, h * 2));
             }
 
+            // Center Reference Line
             ctx.strokeStyle = '#1e293b';
             ctx.beginPath();
             ctx.moveTo(0, midY);
@@ -517,7 +514,7 @@
             }
         }
 
-        // --- 4. Selection & Dragging ---
+        // --- 4. Selection, Dragging & 3-Second Rule ---
         zoomInBtn.addEventListener('click', () => { zoomLevel = Math.min(20.0, zoomLevel + 1.0); zoomLevelDisplay.textContent = zoomLevel.toFixed(1) + 'x'; requestDrawWaveform(); });
         zoomOutBtn.addEventListener('click', () => { zoomLevel = Math.max(1.0, zoomLevel - 1.0); zoomLevelDisplay.textContent = zoomLevel.toFixed(1) + 'x'; requestDrawWaveform(); });
         toggleAutoScrollBtn.addEventListener('click', () => { isAutoScrollEnabled = !isAutoScrollEnabled; autoScrollStatusText.textContent = isAutoScrollEnabled ? '开' : '关'; autoScrollStatusText.className = isAutoScrollEnabled ? 'text-emerald-400' : 'text-rose-400'; });
@@ -599,7 +596,7 @@
                 if (mediaDuration > 0) {
                     const clickTime = (clickX / waveformCanvas.width) * mediaDuration;
                     pointA = clickTime;
-                    pointB = Math.min(mediaDuration, clickTime + 1.0);
+                    pointB = Math.min(mediaDuration, clickTime + 3.0); // 3-second gap rule
                     seekAudio(clickTime);
                 }
             }
@@ -647,7 +644,7 @@
         bMinusBtn.addEventListener('click', () => { if (pointB !== null) { pointB = Math.max(pointA + 0.1, pointB - 0.1); updateABInputs(); if(isPlaying)playAudio(getCurrentTime()); requestDrawWaveform(); } });
         bPlusBtn.addEventListener('click', () => { if (pointB !== null) { pointB += 0.1; enforceABConstraint(); updateABInputs(); if(isPlaying)playAudio(getCurrentTime()); requestDrawWaveform(); } });
 
-        // --- 5. Shortcuts & Direct File Saving ---
+        // --- 5. Shortcuts & Direct File Saving (Fixed & Restored) ---
         window.addEventListener('keydown', (e) => {
             if (e.code === 'Space' && document.activeElement !== noteTextarea && document.activeElement.tagName !== 'INPUT') {
                 e.preventDefault();
@@ -671,7 +668,11 @@
                     saveStateText.textContent = `已成功绑定原文件: ${handle.name}`;
                     saveStateText.className = 'text-emerald-400 font-semibold';
                     saveBtnText.textContent = '覆写保存 (⌘S)';
-                } catch (e) {}
+                } catch (e) {
+                    console.log('取消打开本地文件');
+                }
+            } else {
+                alert('您的浏览器不支持直接文件读取 API，请使用 Chrome 或 Edge 浏览器。');
             }
         });
 
@@ -686,7 +687,9 @@
                     saveStateText.textContent = `已于 ${timeNow} 成功覆写保存至: ${currentFileHandle.name}`;
                     saveStateText.className = 'text-emerald-400 font-semibold';
                     return;
-                } catch (e) {}
+                } catch (e) {
+                    console.warn('覆写失败，重新请求权限');
+                }
             }
             if ('showSaveFilePicker' in window) {
                 try {
@@ -698,6 +701,15 @@
                     saveStateText.className = 'text-emerald-400 font-semibold';
                     saveBtnText.textContent = '覆写保存 (⌘S)';
                 } catch (e) {}
+            } else {
+                const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `Note_${new Date().toISOString().slice(0, 10)}.md`;
+                a.click();
+                URL.revokeObjectURL(url);
+                saveStateText.textContent = `已于 ${timeNow} 导出下载`;
             }
         }
 
@@ -720,6 +732,37 @@
 
         const savedNote = localStorage.getItem('local_note_backup');
         if (savedNote) { noteTextarea.value = savedNote; wordCountText.textContent = `${savedNote.length} 字`; }
+
+        // --- 6. Resizable Panels & Waveform Height Logic ---
+        let isResizingH = false;
+        waveformResizer.addEventListener('mousedown', (e) => { isResizingH = true; e.preventDefault(); });
+
+        let isResizingV = false;
+        panelResizer.addEventListener('mousedown', (e) => { isResizingV = true; e.preventDefault(); });
+
+        window.addEventListener('mousemove', (e) => {
+            if (isResizingH) {
+                const containerRect = leftPanel.getBoundingClientRect();
+                const newHeight = containerRect.bottom - e.clientY;
+                if (newHeight > 100 && newHeight < containerRect.height - 120) {
+                    waveformBox.style.height = `${newHeight}px`;
+                    requestDrawWaveform();
+                }
+            }
+            if (isResizingV) {
+                const containerWidth = document.getElementById('mainContainer').clientWidth;
+                const newWidth = containerWidth - e.clientX;
+                if (newWidth > 280 && newWidth < containerWidth - 300) {
+                    rightPanel.style.width = `${newWidth}px`;
+                    requestDrawWaveform();
+                }
+            }
+        });
+
+        window.addEventListener('mouseup', () => {
+            isResizingH = false;
+            isResizingV = false;
+        });
 
         function formatTime(sec) {
             if (isNaN(sec)) return '00:00.0';
