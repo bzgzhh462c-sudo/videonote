@@ -481,7 +481,7 @@
 
             if (!rawChannelData) {
                 octx.fillStyle = '#475569'; octx.font = '13px sans-serif'; octx.textAlign = 'center';
-                octx.fillText('请打开音频/视频文件，此处显示高精度波形', canvasWidth / 2, canvasHeight / 2);
+                octx.fillText(isVideoMode ? '视频已加载（无音轨波形）' : '请打开音频/视频文件，此处显示高精度波形', canvasWidth / 2, canvasHeight / 2);
                 waveformCache = off; cacheWidth = canvasWidth; cacheHeight = canvasHeight; cacheZoom = zoomLevel;
                 return;
             }
@@ -576,6 +576,12 @@
             isMouseDown = true; dragStartX = e.clientX;
             const duration = mediaDuration || (isVideoMode ? mainVideo.duration : 0) || 0;
             if (!duration) return;
+
+            // 关键修复：视频拖拽时瞬间静音，彻底消除高频尖锐噪声
+            if (isVideoMode) {
+                mainVideo.muted = true;
+            }
+
             const clickTime = getCanvasTimeFromEvent(e);
             const cssWidth = waveformCanvas.clientWidth;
             const clickX = e.clientX - waveformCanvas.getBoundingClientRect().left;
@@ -632,6 +638,12 @@
                 }
             }
             if (dragMode === 'RANGE') waveformCanvas.style.cursor = 'grab';
+
+            // 恢复视频声音
+            if (isVideoMode) {
+                mainVideo.muted = false;
+            }
+
             isMouseDown = false; dragMode = null; enforceABConstraint(); updateABInputs();
             if (isLooping && isPlaying) playMedia(getCurrentTime());
             requestDrawWaveform();
@@ -669,30 +681,45 @@
         bMinusBtn.addEventListener('click', () => { if (pointB !== null) { pointB = Math.max(pointA + 0.1, pointB - 0.1); updateABInputs(); if(isPlaying)playMedia(getCurrentTime()); requestDrawWaveform(); } });
         bPlusBtn.addEventListener('click', () => { if (pointB !== null) { pointB += 0.1; updateABInputs(); if(isPlaying)playMedia(getCurrentTime()); requestDrawWaveform(); } });
 
-        // ========== 5. 笔记文件系统 (完美修复 Cmd+S 静默覆盖) ==========
+        // ========== 5. 笔记文件系统 (完美修复：使用 showSaveFilePicker 并申请 readwrite 权限) ==========
         window.addEventListener('keydown', (e) => {
             if (e.code === 'Space' && document.activeElement !== noteTextarea && document.activeElement.tagName !== 'INPUT') {
                 e.preventDefault(); togglePlay();
             }
             if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
-                e.preventDefault(); saveNoteDirectly();
+                e.preventDefault();
+                saveNoteDirectly();
             }
         });
 
         openNativeFileBtn.addEventListener('click', async () => {
             if ('showOpenFilePicker' in window) {
                 try {
-                    const [handle] = await window.showOpenFilePicker({ types: [{ description: 'Markdown/Text', accept: { 'text/plain': ['.md', '.txt'] } }] });
+                    // 关键修复：显式请求 readwrite 权限
+                    const [handle] = await window.showOpenFilePicker({ 
+                        types: [{ description: 'Markdown/Text', accept: { 'text/plain': ['.md', '.txt'] } }] 
+                    });
+                    
+                    // 确认并请求写权限
+                    if ((await handle.queryPermission({ mode: 'readwrite' })) !== 'granted') {
+                        if ((await handle.requestPermission({ mode: 'readwrite' })) !== 'granted') {
+                            alert('未获得该文件的写入权限，将无法直接保存。');
+                            return;
+                        }
+                    }
+
                     currentFileHandle = handle;
                     const file = await handle.getFile();
                     loadedFileName = file.name;
                     const text = await file.text();
                     noteTextarea.value = text;
                     wordCountText.textContent = `${text.length} 字`;
-                    saveStateText.textContent = `已成功绑定原文件: ${file.name} (按 ⌘S 直接静默保存)`;
+                    saveStateText.textContent = `已成功绑定原文件并开启写入: ${file.name} (按 ⌘S 直接静默保存)`;
                     saveStateText.className = 'text-emerald-400 font-semibold';
                     saveBtnText.textContent = '覆写保存 (⌘S)';
-                } catch (e) {}
+                } catch (e) {
+                    console.log('用户取消选择');
+                }
             } else {
                 fallbackNoteFileInput.click();
             }
@@ -705,9 +732,9 @@
                 reader.onload = (evt) => {
                     noteTextarea.value = evt.target.result;
                     loadedFileName = file.name;
-                    currentFileHandle = null; // 传统文件模式无法静默覆写，标记为需另存或触发下载
+                    currentFileHandle = null;
                     wordCountText.textContent = `${evt.target.result.length} 字`;
-                    saveStateText.textContent = `已载入文本: ${file.name} (将通过另存为/下载保存)`;
+                    saveStateText.textContent = `已载入文本: ${file.name}`;
                     saveStateText.className = 'text-amber-400 font-semibold';
                 };
                 reader.readAsText(file);
@@ -718,9 +745,12 @@
             const content = noteTextarea.value;
             const timeNow = new Date().toLocaleTimeString();
 
-            // 如果已经有绑定的原生 FileHandle，直接静默覆写！
+            // 如果已有具名文件句柄且权限正常，直接静默覆写保存！
             if (currentFileHandle) {
                 try {
+                    if ((await currentFileHandle.queryPermission({ mode: 'readwrite' })) !== 'granted') {
+                        await currentFileHandle.requestPermission({ mode: 'readwrite' });
+                    }
                     const writable = await currentFileHandle.createWritable();
                     await writable.write(content);
                     await writable.close();
@@ -728,19 +758,30 @@
                     saveStateText.className = 'text-emerald-400 font-semibold';
                     return;
                 } catch (e) {
-                    console.warn('句柄失效，重新获取');
+                    console.warn('句柄写入异常，转入保存框', e);
                     currentFileHandle = null;
                 }
             }
 
-            // 如果没有绑定，但浏览器支持 showSaveFilePicker，则弹一次窗绑定
+            // 如果没有绑定，则通过 showSaveFilePicker 弹出保存框建立绑定
             if ('showSaveFilePicker' in window) {
                 try {
-                    currentFileHandle = await window.showSaveFilePicker({ suggestedName: loadedFileName || `Note_${new Date().toISOString().slice(0, 10)}.md`, types: [{ description: 'Markdown/Text', accept: { 'text/plain': ['.md', '.txt'] } }] });
-                    const writable = await currentFileHandle.createWritable();
+                    const handle = await window.showSaveFilePicker({ 
+                        suggestedName: loadedFileName || `Note_${new Date().toISOString().slice(0, 10)}.md`, 
+                        types: [{ description: 'Markdown/Text', accept: { 'text/plain': ['.md', '.txt'] } }] 
+                    });
+                    
+                    if ((await handle.queryPermission({ mode: 'readwrite' })) !== 'granted') {
+                        await handle.requestPermission({ mode: 'readwrite' });
+                    }
+
+                    currentFileHandle = handle;
+                    loadedFileName = handle.name;
+                    const writable = await handle.createWritable();
                     await writable.write(content);
                     await writable.close();
-                    saveStateText.textContent = `已绑定并于 ${timeNow} 成功保存至: ${currentFileHandle.name}`;
+                    
+                    saveStateText.textContent = `已成功绑定并保存至: ${handle.name} (后续按 ⌘S 直接保存)`;
                     saveStateText.className = 'text-emerald-400 font-semibold';
                     saveBtnText.textContent = '覆写保存 (⌘S)';
                     return;
@@ -749,7 +790,7 @@
                 }
             }
 
-            // 传统降级：直接触发下载
+            // 传统降级：触发下载
             const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
@@ -757,7 +798,7 @@
             a.download = loadedFileName || `Note_${new Date().toISOString().slice(0, 10)}.txt`;
             a.click();
             URL.revokeObjectURL(url);
-            saveStateText.textContent = `已于 ${timeNow} 成功下载导出`;
+            saveStateText.textContent = `已于 ${timeNow} 成功导出下载`;
             saveStateText.className = 'text-emerald-400 font-semibold';
         }
 
