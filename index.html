@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AudioVisualizer Studio Pro - 极速双栏工作站</title>
+    <title>AudioVisualizer Studio Pro - 极速精准版</title>
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -47,7 +47,7 @@
                 <i class="fa-solid fa-volume-high text-lg"></i>
             </div>
             <h1 class="text-base font-bold bg-gradient-to-r from-sky-400 to-blue-500 bg-clip-text text-transparent">
-                AudioVisualizer Studio Pro <span class="text-xs px-2 py-0.5 rounded bg-sky-950 text-sky-400 border border-sky-800">Direct File Engine</span>
+                AudioVisualizer Studio Pro <span class="text-xs px-2 py-0.5 rounded bg-sky-950 text-sky-400 border border-sky-800">Precision Pro</span>
             </h1>
         </div>
 
@@ -68,7 +68,7 @@
                 <i class="fa-solid fa-file-export text-sky-400"></i>
                 <span>另存为...</span>
             </button>
-            <!-- Native Open File Button -->
+            <!-- Native / Backup Open Note File -->
             <button id="openNativeFileBtn" class="bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-md border border-slate-700 flex items-center space-x-1.5 transition" title="打开本地笔记文件 (.txt / .md)">
                 <i class="fa-solid fa-file-import text-amber-400"></i>
                 <span>打开/绑定本地文件</span>
@@ -145,7 +145,7 @@
                     </div>
                 </div>
 
-                <!-- Canvas Waveform Container -->
+                <!-- Canvas Waveform Canvas Container -->
                 <div id="waveformScrollContainer" class="flex-1 overflow-x-auto overflow-y-hidden relative waveform-container bg-slate-950">
                     <canvas id="waveformCanvas" class="h-full block cursor-crosshair"></canvas>
                 </div>
@@ -186,11 +186,11 @@
             </div>
 
             <div class="flex-1 p-3 bg-slate-900 flex flex-col">
-                <textarea id="noteTextarea" class="w-full flex-1 bg-slate-950 text-slate-100 p-3 rounded-lg border border-slate-800 focus:border-sky-500 focus:outline-none font-sans text-sm resize-none leading-relaxed" placeholder="在此输入笔记内容... 点击右上方“打开/绑定本地文件”可链接本地 .txt/.md 文件，之后按 ⌘S 即可静默覆写保存。"></textarea>
+                <textarea id="noteTextarea" class="w-full flex-1 bg-slate-950 text-slate-100 p-3 rounded-lg border border-slate-800 focus:border-sky-500 focus:outline-none font-sans text-sm resize-none leading-relaxed" placeholder="在此输入笔记内容... 点击右上方按钮可随时插入带有播放时间的快捷跳转链接 [MM:SS]"></textarea>
             </div>
 
             <div class="h-8 bg-slate-950 border-t border-slate-800 px-3 flex items-center justify-between text-[11px] text-slate-500">
-                <span id="saveStateText" class="text-amber-400/80">未绑定文件（请先点击右上方打开本地文件）</span>
+                <span id="saveStateText" class="text-amber-400/80">未绑定文件（点击“打开/绑定本地文件”后按 ⌘S 直接覆写）</span>
                 <span id="wordCountText">0 字</span>
             </div>
         </div>
@@ -259,16 +259,14 @@
 
         let rawChannelData = null;
         let isMouseDown = false;
-        let dragMode = null;
+        let dragMode = null; // 'A', 'B', 'RANGE', 'SELECT'
         let dragStartX = 0;
         let dragStartA = 0;
         let dragStartB = 0;
         let dragOffsetTimeA = 0;
         let dragRangeDuration = 0;
         let renderPending = false;
-        
-        // Critical File Handle Store for Silent Overwrite
-        let globalFileHandle = null;
+        let currentFileHandle = null;
         let loadedFileName = '';
 
         // --- 1. Load Audio ---
@@ -517,9 +515,10 @@
             }
         }
 
-        // --- 4. Precise Click & Dragging Logic ---
+        // --- 4. Precise Click & Dragging Logic (Independent Handles + Range Move) ---
         function getCanvasTimeFromEvent(e) {
             const rect = waveformCanvas.getBoundingClientRect();
+            // Get actual CSS pixel width regardless of Retina DPR
             const cssWidth = waveformCanvas.clientWidth;
             const clickX = (e.clientX - rect.left);
             const duration = mediaDuration;
@@ -544,8 +543,11 @@
                 const xA = (pointA / mediaDuration) * cssWidth;
                 const xB = (pointB / mediaDuration) * cssWidth;
 
+                // Independent Handle A Drag Detection (Width 16px)
                 if (Math.abs(clickX - xA) <= 12) { dragMode = 'A'; return; }
+                // Independent Handle B Drag Detection (Width 16px)
                 if (Math.abs(clickX - xB) <= 12) { dragMode = 'B'; return; }
+                // Middle Selection Area Move
                 if (clickX > Math.min(xA, xB) && clickX < Math.max(xA, xB)) {
                     dragMode = 'RANGE';
                     dragOffsetTimeA = clickTime - pointA;
@@ -607,7 +609,7 @@
                 if (mediaDuration > 0) {
                     const clickTime = getCanvasTimeFromEvent(e);
                     pointA = clickTime;
-                    pointB = Math.min(mediaDuration, clickTime + 3.0); // Exact 3s gap
+                    pointB = Math.min(mediaDuration, clickTime + 3.0); // Exact 3-second gap
                     seekAudio(clickTime);
                 }
             }
@@ -655,7 +657,7 @@
         bMinusBtn.addEventListener('click', () => { if (pointB !== null) { pointB = Math.max(pointA + 0.1, pointB - 0.1); updateABInputs(); if(isPlaying)playAudio(getCurrentTime()); requestDrawWaveform(); } });
         bPlusBtn.addEventListener('click', () => { if (pointB !== null) { pointB += 0.1; enforceABConstraint(); updateABInputs(); if(isPlaying)playAudio(getCurrentTime()); requestDrawWaveform(); } });
 
-        // --- 5. Zero-Lag Textarea & Silent File System ---
+        // --- 5. Robust File System & Silent Cmd+S Overwrite ---
         window.addEventListener('keydown', (e) => {
             if (e.code === 'Space' && document.activeElement !== noteTextarea && document.activeElement.tagName !== 'INPUT') {
                 e.preventDefault();
@@ -667,21 +669,18 @@
             }
         });
 
-        // Open Native File & Lock File Handle Permanently
+        // Open Native Local File with Locked File Handle
         openNativeFileBtn.addEventListener('click', async () => {
             if ('showOpenFilePicker' in window) {
                 try {
-                    const [handle] = await window.showOpenFilePicker({ 
-                        types: [{ description: 'Markdown/Text', accept: { 'text/plain': ['.md', '.txt'] } }] 
-                    });
-                    globalFileHandle = handle;
+                    const [handle] = await window.showOpenFilePicker({ types: [{ description: 'Markdown/Text', accept: { 'text/plain': ['.md', '.txt'] } }] });
+                    currentFileHandle = handle;
                     const file = await handle.getFile();
                     loadedFileName = file.name;
                     const text = await file.text();
-                    
                     noteTextarea.value = text;
                     wordCountText.textContent = `${text.length} 字`;
-                    saveStateText.textContent = `已成功绑定原文件: ${file.name} (按 ⌘S 即可直接覆写)`;
+                    saveStateText.textContent = `已成功绑定原文件: ${file.name} (按 ⌘S 即可直接静默保存)`;
                     saveStateText.className = 'text-emerald-400 font-semibold';
                     saveBtnText.textContent = '覆写保存 (⌘S)';
                 } catch (e) {
@@ -711,31 +710,27 @@
             const content = noteTextarea.value;
             const timeNow = new Date().toLocaleTimeString();
 
-            // 1. Silent Direct Overwrite via Native FileHandle
-            if (globalFileHandle) {
+            // Direct Silent Overwrite If Handle Exists
+            if (currentFileHandle) {
                 try {
-                    const writable = await globalFileHandle.createWritable();
+                    const writable = await currentFileHandle.createWritable();
                     await writable.write(content);
                     await writable.close();
-                    saveStateText.textContent = `已于 ${timeNow} 静默覆写保存至原文件: ${globalFileHandle.name}`;
+                    saveStateText.textContent = `已于 ${timeNow} 静默覆写保存至: ${currentFileHandle.name}`;
                     saveStateText.className = 'text-emerald-400 font-semibold';
                     return;
                 } catch (e) {
-                    console.warn('句柄权限丢失，准备重新弹窗申请绑定', e);
+                    console.warn('句柄权限失效，切换保存框');
                 }
             }
 
-            // 2. First-time Binding Prompt
             if ('showSaveFilePicker' in window) {
                 try {
-                    globalFileHandle = await window.showSaveFilePicker({ 
-                        suggestedName: loadedFileName || `Note_${new Date().toISOString().slice(0, 10)}.md`, 
-                        types: [{ description: 'Markdown/Text', accept: { 'text/plain': ['.md', '.txt'] } }] 
-                    });
-                    const writable = await globalFileHandle.createWritable();
+                    currentFileHandle = await window.showSaveFilePicker({ suggestedName: loadedFileName || `Note_${new Date().toISOString().slice(0, 10)}.md`, types: [{ description: 'Markdown/Text', accept: { 'text/plain': ['.md', '.txt'] } }] });
+                    const writable = await currentFileHandle.createWritable();
                     await writable.write(content);
                     await writable.close();
-                    saveStateText.textContent = `已绑定并于 ${timeNow} 成功保存至: ${globalFileHandle.name}`;
+                    saveStateText.textContent = `已绑定并于 ${timeNow} 成功保存至: ${currentFileHandle.name}`;
                     saveStateText.className = 'text-emerald-400 font-semibold';
                     saveBtnText.textContent = '覆写保存 (⌘S)';
                     return;
@@ -744,9 +739,8 @@
                 }
             }
 
-            // 3. Fallback Export Download
             downloadTextFile(content, loadedFileName || `Note_${new Date().toISOString().slice(0, 10)}.txt`);
-            saveStateText.textContent = `已于 ${timeNow} 导出下载到本地`;
+            saveStateText.textContent = `已于 ${timeNow} 导出下载`;
             saveStateText.className = 'text-emerald-400 font-semibold';
         }
 
@@ -761,7 +755,7 @@
         }
 
         saveNoteBtn.addEventListener('click', saveNoteDirectly);
-        saveAsNoteBtn.addEventListener('click', async () => { globalFileHandle = null; await saveNoteDirectly(); });
+        saveAsNoteBtn.addEventListener('click', async () => { currentFileHandle = null; await saveNoteDirectly(); });
 
         insertTimestampBtn.addEventListener('click', () => {
             const timeStr = `[${formatTime(getCurrentTime())}] `;
@@ -772,10 +766,18 @@
             noteTextarea.focus();
         });
 
-        // Instant Zero-Lag Typing Response
+        // Debounced Input Handler to eliminate typing lag completely
+        let debounceTimer = null;
         noteTextarea.addEventListener('input', () => {
             wordCountText.textContent = `${noteTextarea.value.length} 字`;
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(() => {
+                localStorage.setItem('local_note_backup', noteTextarea.value);
+            }, 300);
         });
+
+        const savedNote = localStorage.getItem('local_note_backup');
+        if (savedNote) { noteTextarea.value = savedNote; wordCountText.textContent = `${savedNote.length} 字`; }
 
         // --- 6. Resizable Panels ---
         let isResizingH = false;
