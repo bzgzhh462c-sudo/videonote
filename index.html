@@ -4,6 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AudioVisualizer</title>
+<link rel="icon" type="image/png" href="favorate.png" sizes="32x32">
+<link rel="icon" type="image/png" href="favorate.png" sizes="16x16">
+<link rel="apple-touch-icon" href="favorate.png">
+<link rel="shortcut icon" href="favorate.png">
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
@@ -373,56 +377,64 @@
       playPauseBtn.innerHTML = '<i class="fa-solid fa-play"></i>';
       stopProgressLoop();
     }
-    // ========== 优化后的安全视频 Seek（pause + mute，尽量减少噪声与延迟） ==========
-    function safeVideoSeek(time, onDone) {
-      if (!isVideoMode) return;
-      if (isSeekingVideo) return;
-      isSeekingVideo = true;
+// ========== 进一步优化的安全视频 Seek（减少残余噪声） ==========
+function safeVideoSeek(time, onDone) {
+  if (!isVideoMode) return;
+  if (isSeekingVideo) return;
+  isSeekingVideo = true;
 
-      const wasPlaying = !mainVideo.paused && isPlaying;
-      const wasMuted = mainVideo.muted;
-      const target = Math.max(0, Math.min(mediaDuration || mainVideo.duration || 0, time));
+  const wasPlaying = !mainVideo.paused && isPlaying;
+  const originalVolume = mainVideo.volume;
+  const target = Math.max(0, Math.min(mediaDuration || mainVideo.duration || 0, time));
 
-      // 已经非常接近目标时间，直接跳过 seek，减少不必要延迟
-      if (Math.abs(mainVideo.currentTime - target) < 0.05) {
-        isSeekingVideo = false;
-        if (typeof onDone === 'function') onDone();
-        else if (wasPlaying) mainVideo.play().catch(() => {});
-        return;
+  // 已经非常接近，直接跳过
+  if (Math.abs(mainVideo.currentTime - target) < 0.04) {
+    isSeekingVideo = false;
+    if (typeof onDone === 'function') onDone();
+    else if (wasPlaying) mainVideo.play().catch(() => {});
+    return;
+  }
+
+  // 1. 先把音量降到 0（比 muted 更可控）
+  mainVideo.volume = 0;
+  mainVideo.pause();
+
+  // 2. 执行 seek
+  mainVideo.currentTime = target;
+
+  let finished = false;
+  const finish = () => {
+    if (finished) return;
+    finished = true;
+
+    // 3. 给解码器一点额外时间稳定（关键！）
+    setTimeout(() => {
+      // 恢复音量
+      mainVideo.volume = originalVolume;
+      isSeekingVideo = false;
+      updateProgress();
+      requestDrawWaveform();
+
+      if (typeof onDone === 'function') {
+        onDone();
+      } else if (wasPlaying) {
+        mainVideo.play().catch(e => console.warn('resume after seek', e));
       }
+    }, 35); // 30~50ms 比较平衡，可按体验微调
+  };
 
-      mainVideo.pause();
-      mainVideo.muted = true;
-      mainVideo.currentTime = target;
+  const onSeeked = () => {
+    mainVideo.removeEventListener('seeked', onSeeked);
+    // 双 rAF 再等一帧，进一步降低爆音概率
+    requestAnimationFrame(() => {
+      requestAnimationFrame(finish);
+    });
+  };
+  mainVideo.addEventListener('seeked', onSeeked);
 
-      let finished = false;
-      const finish = () => {
-        if (finished) return;
-        finished = true;
-        mainVideo.muted = wasMuted;
-        isSeekingVideo = false;
-        updateProgress();
-        requestDrawWaveform();
-
-        if (typeof onDone === 'function') {
-          onDone();
-        } else if (wasPlaying) {
-          mainVideo.play().catch(e => console.warn('resume after seek', e));
-        }
-      };
-
-      const onSeeked = () => {
-        mainVideo.removeEventListener('seeked', onSeeked);
-        // 双 rAF 给浏览器一点时间真正准备好音频，再 unmute，进一步降低爆音概率
-        requestAnimationFrame(() => {
-          requestAnimationFrame(finish);
-        });
-      };
-      mainVideo.addEventListener('seeked', onSeeked);
-
-      // 超时兜底（现代浏览器通常很快，180ms 足够）
-      setTimeout(finish, 180);
-    }
+  // 超时兜底
+  setTimeout(finish, 220);
+}
     function seekMedia(targetTime) {
       const t = Math.max(0, Math.min(mediaDuration || 99999, targetTime));
       pauseOffset = t;
