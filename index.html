@@ -49,7 +49,7 @@
         <input type="file" id="mediaFileInput" accept="video/*,audio/*,.mp3,.wav,.m4a,.flac,.aac,.ogg,.mp4,.webm,.mov" class="hidden">
       </label>
       <div class="h-4 w-px bg-slate-700"></div>
-      <button id="saveNoteBtn" class="bg-emerald-700 hover:bg-emerald-600 text-white font-medium px-3 py-1.5 rounded-md border border-emerald-600 flex items-center space-x-1.5 transition" title="保存笔记 (Cmd/Ctrl+S)">
+      <button id="saveNoteBtn" class="bg-emerald-700 hover:bg-emerald-600 text-white font-medium px-3 py-1.5 rounded-md border border-emerald-600 flex items-center space-x-1.5 transition" title="直接覆盖保存到已绑定文件 (Cmd/Ctrl+S)">
         <i class="fa-solid fa-floppy-disk"></i>
         <span id="saveBtnText">保存笔记 (⌘S)</span>
       </button>
@@ -57,7 +57,7 @@
         <i class="fa-solid fa-file-export text-sky-400"></i>
         <span>另存为...</span>
       </button>
-      <button id="openNativeFileBtn" class="bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-md border border-slate-700 flex items-center space-x-1.5 transition" title="打开本地笔记文件 (.txt / .md)">
+      <button id="openNativeFileBtn" class="bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-md border border-slate-700 flex items-center space-x-1.5 transition" title="打开本地笔记文件并开启直接覆盖权限">
         <i class="fa-solid fa-file-import text-amber-400"></i>
         <span>打开/绑定本地文件</span>
       </button>
@@ -157,7 +157,7 @@
         <textarea id="noteTextarea" class="w-full flex-1 bg-slate-950 text-slate-100 p-3 rounded-lg border border-slate-800 focus:border-sky-500 focus:outline-none font-sans text-sm resize-none leading-relaxed" placeholder="在此输入笔记内容... 点击右上方按钮可随时插入带有播放时间的快捷跳转链接 [MM:SS]"></textarea>
       </div>
       <div class="h-8 bg-slate-950 border-t border-slate-800 px-3 flex items-center justify-between text-[11px] text-slate-500">
-        <span id="saveStateText" class="text-amber-400/80">未绑定文件（点击“打开/绑定本地文件”后按 ⌘S 保存）</span>
+        <span id="saveStateText" class="text-amber-400/80">未绑定文件（首次保存将要求选择一次保存路径）</span>
         <span id="wordCountText">0 字</span>
       </div>
     </div>
@@ -221,7 +221,7 @@
 
     let isVideoMode = false;
     let mediaObjectURL = null;
-    let isSeekingVideo = false;   // 防止视频 seek 噪声
+    let isSeekingVideo = false;
 
     let isMouseDown = false;
     let dragMode = null;
@@ -234,7 +234,6 @@
 
     let currentFileHandle = null;
     let loadedFileName = '';
-    let supportsFSAccess = typeof window.showOpenFilePicker === 'function' && typeof window.showSaveFilePicker === 'function';
 
     let waveformCache = null;
     let cacheWidth = 0;
@@ -346,7 +345,6 @@
         if (isLooping && pointA !== null && pointB !== null && pointA < pointB) {
           if (offset < pointA || offset >= pointB) offset = pointA;
         }
-        // 静音 seek 再恢复，避免噪声
         safeVideoSeek(offset, () => {
           mainVideo.play().catch(e => console.warn('video play', e));
         });
@@ -400,7 +398,6 @@
       stopProgressLoop();
     }
 
-    // 关键：视频安全 seek（先静音再 seek，避免尖锐噪声）
     function safeVideoSeek(time, onDone) {
       if (!isVideoMode) return;
       if (isSeekingVideo) return;
@@ -424,7 +421,6 @@
       };
       mainVideo.addEventListener('seeked', onSeeked);
 
-      // 兜底：有些浏览器 seeked 不触发
       setTimeout(() => {
         if (isSeekingVideo) {
           mainVideo.removeEventListener('seeked', onSeeked);
@@ -810,7 +806,6 @@
         }
       }
 
-      // 松手后真正 seek（视频会静音处理，无噪声）
       if (previewTime !== null) {
         seekMedia(previewTime);
       }
@@ -911,201 +906,126 @@
       }
     });
 
-    // ========== 5. 笔记保存（最强拦截 + 全浏览器兼容） ==========
-    function isSaveShortcut(e) {
-      return (e.ctrlKey || e.metaKey) &&
-             (e.key === 's' || e.key === 'S' || e.code === 'KeyS') &&
-             !e.shiftKey && !e.altKey;
-    }
-
-    // 捕获阶段 + 冒泡阶段双重拦截
-    function handleSaveKey(e) {
-      if (isSaveShortcut(e)) {
-        e.preventDefault();
-        e.stopPropagation();
-        e.stopImmediatePropagation();
-        saveNoteDirectly();
-        return false;
-      }
-    }
-
-    document.addEventListener('keydown', handleSaveKey, true);   // 捕获
-    document.addEventListener('keydown', handleSaveKey, false);  // 冒泡
-    window.addEventListener('keydown', handleSaveKey, true);
-    noteTextarea.addEventListener('keydown', handleSaveKey, true);
-
-    // Space 播放
-    document.addEventListener('keydown', (e) => {
+    // ========== 5. 笔记保存（完全参考自“原来文件保存”） ==========
+    window.addEventListener('keydown', (e) => {
       if (e.code === 'Space' && document.activeElement !== noteTextarea && document.activeElement.tagName !== 'INPUT') {
         e.preventDefault();
         togglePlay();
       }
-    }, true);
-
-    async function ensureWritePermission(handle) {
-      if (!handle) return false;
-      try {
-        let perm = await handle.queryPermission({ mode: 'readwrite' });
-        if (perm === 'granted') return true;
-        perm = await handle.requestPermission({ mode: 'readwrite' });
-        return perm === 'granted';
-      } catch (e) {
-        return false;
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        saveNoteDirectly();
       }
-    }
+    });
 
     openNativeFileBtn.addEventListener('click', async () => {
-      if (supportsFSAccess) {
+      if ('showOpenFilePicker' in window) {
         try {
           const [handle] = await window.showOpenFilePicker({
-            types: [{ description: 'Markdown/Text', accept: { 'text/plain': ['.md', '.txt', '.markdown'] } }],
-            multiple: false
+            types: [{ description: 'Markdown / Text', accept: { 'text/plain': ['.md', '.txt'] } }]
           });
-          const ok = await ensureWritePermission(handle);
           currentFileHandle = handle;
           const file = await handle.getFile();
           loadedFileName = file.name;
           const text = await file.text();
           noteTextarea.value = text;
+          saveLocalBackup();
           wordCountText.textContent = `${text.length} 字`;
-          if (ok) {
-            saveStateText.textContent = `已绑定: ${file.name}（Chrome/Edge 下 ⌘S 可静默覆盖）`;
-            saveStateText.className = 'text-emerald-400 font-semibold';
-            saveBtnText.textContent = '覆写保存 (⌘S)';
-          } else {
-            saveStateText.textContent = `已载入: ${file.name}（⌘S 将下载同名文件）`;
-            saveStateText.className = 'text-amber-400 font-semibold';
-          }
-          return;
-        } catch (e) {
-          if (e.name === 'AbortError') return;
+          
+          const timeNow = new Date().toLocaleTimeString();
+          saveStateText.textContent = `已成功绑定原文件: ${handle.name} (时间: ${timeNow})`;
+          saveStateText.className = 'text-emerald-400 font-semibold';
+          saveBtnText.textContent = '覆写保存 (⌘S)';
+        } catch (err) {
+          console.log('用户取消选择或授权未通过');
         }
+      } else {
+        alert('请使用 Chrome 或 Edge 浏览器体验直接覆写本地文件功能。');
       }
-      fallbackNoteFileInput.click();
-    });
-
-    fallbackNoteFileInput.addEventListener('change', (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = (evt) => {
-        noteTextarea.value = evt.target.result;
-        loadedFileName = file.name;
-        wordCountText.textContent = `${evt.target.result.length} 字`;
-        currentFileHandle = null;
-        saveStateText.textContent = `已载入: ${file.name}（⌘S 将下载同名文件，选择“保存”即可覆盖）`;
-        saveStateText.className = 'text-amber-400 font-semibold';
-        saveBtnText.textContent = '保存笔记 (⌘S)';
-      };
-      reader.onerror = () => alert('读取文件失败');
-      reader.readAsText(file);
-      e.target.value = '';
     });
 
     async function saveNoteDirectly() {
       const content = noteTextarea.value;
       const timeNow = new Date().toLocaleTimeString();
-      const suggestedName = loadedFileName || `Note_${new Date().toISOString().slice(0, 10)}.md`;
 
-      // 立即反馈
-      const oldText = saveStateText.textContent;
-      saveStateText.textContent = '⏳ 正在保存...';
-      saveStateText.className = 'text-sky-400 font-semibold';
-
-      try {
-        // 1. 尝试静默覆盖（仅 Chrome/Edge）
-        if (currentFileHandle && supportsFSAccess) {
-          const hasPerm = await ensureWritePermission(currentFileHandle);
-          if (hasPerm) {
-            const writable = await currentFileHandle.createWritable();
-            await writable.write(content);
-            await writable.close();
-            saveStateText.textContent = `✅ 已于 ${timeNow} 静默覆写: ${currentFileHandle.name}`;
-            saveStateText.className = 'text-emerald-400 font-semibold';
-            return;
-          }
+      if (currentFileHandle) {
+        try {
+          const writable = await currentFileHandle.createWritable();
+          await writable.write(content);
+          await writable.close();
+          
+          saveStateText.textContent = `已于 ${timeNow} 成功保存至: ${currentFileHandle.name}`;
+          saveStateText.className = 'text-emerald-400 font-semibold';
+          return;
+        } catch (err) {
+          console.warn('保存遇到阻碍，重新申请文件窗口:', err);
         }
+      }
 
-        // 2. 尝试另存为弹窗（Chrome/Edge）
-        if (supportsFSAccess) {
-          try {
-            const handle = await window.showSaveFilePicker({
-              suggestedName: suggestedName,
-              types: [{ description: 'Markdown/Text', accept: { 'text/plain': ['.md', '.txt'] } }]
-            });
-            const writable = await handle.createWritable();
-            await writable.write(content);
-            await writable.close();
-            currentFileHandle = handle;
-            loadedFileName = handle.name;
-            saveStateText.textContent = `✅ 已保存并绑定: ${handle.name}`;
-            saveStateText.className = 'text-emerald-400 font-semibold';
-            saveBtnText.textContent = '覆写保存 (⌘S)';
-            return;
-          } catch (e) {
-            if (e.name === 'AbortError') {
-              saveStateText.textContent = '已取消保存';
-              saveStateText.className = 'text-amber-400';
-              return;
-            }
-          }
+      if ('showSaveFilePicker' in window) {
+        try {
+          currentFileHandle = await window.showSaveFilePicker({
+            suggestedName: `Video_Note_${new Date().toISOString().slice(0, 10)}.md`,
+            types: [{ description: 'Markdown / Text', accept: { 'text/plain': ['.md', '.txt'] } }]
+          });
+          const writable = await currentFileHandle.createWritable();
+          await writable.write(content);
+          await writable.close();
+          
+          saveStateText.textContent = `已绑定并于 ${timeNow} 成功保存至: ${currentFileHandle.name}`;
+          saveStateText.className = 'text-emerald-400 font-semibold';
+          saveBtnText.textContent = '覆写保存 (⌘S)';
+        } catch (err) {
+          // Cancelled
         }
-
-        // 3. 全浏览器兜底：下载
-        downloadTextFile(content, suggestedName);
-        saveStateText.textContent = `✅ 已触发下载「${suggestedName}」——请在下载对话框选择“保存”覆盖原文件`;
-        saveStateText.className = 'text-emerald-400 font-semibold';
-      } catch (err) {
-        console.error(err);
-        // 最终兜底
-        downloadTextFile(content, suggestedName);
-        saveStateText.textContent = `✅ 已触发下载「${suggestedName}」`;
-        saveStateText.className = 'text-emerald-400 font-semibold';
+      } else {
+        exportDownloadFallback(content);
       }
     }
 
-    function downloadTextFile(content, filename) {
-      const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      a.style.display = 'none';
-      document.body.appendChild(a);
-      a.click();
-      setTimeout(() => {
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-      }, 200);
-    }
+    saveNoteBtn.addEventListener('click', saveNoteDirectly);
 
-    saveNoteBtn.addEventListener('click', () => saveNoteDirectly());
     saveAsNoteBtn.addEventListener('click', async () => {
       currentFileHandle = null;
       await saveNoteDirectly();
     });
 
+    function exportDownloadFallback(content) {
+      const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Video_Note_${new Date().toISOString().slice(0, 10)}.md`;
+      a.click();
+      URL.revokeObjectURL(url);
+      saveStateText.textContent = `已于 ${new Date().toLocaleTimeString()} 导出下载`;
+    }
+
+    function saveLocalBackup() {
+      try {
+        localStorage.setItem('studio_note_backup', noteTextarea.value);
+      } catch (e) {}
+    }
+
+    noteTextarea.addEventListener('input', () => {
+      saveLocalBackup();
+      wordCountText.textContent = `${noteTextarea.value.length} 字`;
+    });
+
     insertTimestampBtn.addEventListener('click', () => {
       const timeStr = `[${formatTime(getCurrentTime())}] `;
       const start = noteTextarea.selectionStart;
+      const end = noteTextarea.selectionEnd;
       const text = noteTextarea.value;
-      noteTextarea.value = text.substring(0, start) + timeStr + text.substring(noteTextarea.selectionEnd);
+      noteTextarea.value = text.substring(0, start) + timeStr + text.substring(end);
       noteTextarea.selectionStart = noteTextarea.selectionEnd = start + timeStr.length;
       noteTextarea.focus();
+      saveLocalBackup();
       wordCountText.textContent = `${noteTextarea.value.length} 字`;
-    });
-
-    let debounceTimer = null;
-    noteTextarea.addEventListener('input', () => {
-      wordCountText.textContent = `${noteTextarea.value.length} 字`;
-      clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(() => {
-        try { localStorage.setItem('local_note_backup', noteTextarea.value); } catch (e) {}
-      }, 800);
     });
 
     try {
-      const savedNote = localStorage.getItem('local_note_backup');
+      const savedNote = localStorage.getItem('studio_note_backup');
       if (savedNote) {
         noteTextarea.value = savedNote;
         wordCountText.textContent = `${savedNote.length} 字`;
@@ -1149,12 +1069,6 @@
       invalidateWaveformCache();
       requestDrawWaveform();
     });
-
-    // 初始提示
-    if (!supportsFSAccess) {
-      saveStateText.textContent = '当前浏览器不支持静默覆盖。⌘S 会下载同名文件，选择“保存”即可覆盖原文件';
-      saveStateText.className = 'text-amber-400/90';
-    }
 
     requestDrawWaveform();
   </script>
