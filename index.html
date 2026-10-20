@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AudioVisualizer Studio Pro - 音视频分析与笔记工作站</title>
+    <title>AudioVisualizer Studio Pro - 零延迟无噪声工作站</title>
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -27,35 +27,13 @@
     <!-- FontAwesome Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        /* Custom Scrollbars */
-        ::-webkit-scrollbar {
-            width: 6px;
-            height: 6px;
-        }
-        ::-webkit-scrollbar-track {
-            background: #1e293b;
-        }
-        ::-webkit-scrollbar-thumb {
-            background: #475569;
-            border-radius: 3px;
-        }
-        ::-webkit-scrollbar-thumb:hover {
-            background: #64748b;
-        }
-        /* Canvas Waveform Box */
-        .waveform-container {
-            user-select: none;
-            touch-action: none;
-        }
-        /* Resize handles */
-        .resizer-h {
-            cursor: row-resize;
-            height: 6px;
-        }
-        .resizer-v {
-            cursor: col-resize;
-            width: 6px;
-        }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #1e293b; }
+        ::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #64748b; }
+        .waveform-container { user-select: none; touch-action: none; }
+        .resizer-h { cursor: row-resize; height: 6px; }
+        .resizer-v { cursor: col-resize; width: 6px; }
     </style>
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen h-screen flex flex-col font-sans overflow-hidden select-none">
@@ -64,10 +42,10 @@
     <header class="h-12 bg-slate-900 border-b border-slate-800 flex items-center justify-between px-4 shrink-0">
         <div class="flex items-center space-x-3">
             <div class="bg-sky-600 text-white p-1.5 rounded-lg flex items-center justify-center">
-                <i class="fa-solid fa-photo-film text-lg"></i>
+                <i class="fa-solid fa-volume-high text-lg"></i>
             </div>
             <h1 class="text-base font-bold bg-gradient-to-r from-sky-400 to-blue-500 bg-clip-text text-transparent">
-                AudioVisualizer Studio Pro <span class="text-xs px-2 py-0.5 rounded bg-sky-950 text-sky-400 border border-sky-800">Media Studio</span>
+                AudioVisualizer Studio Pro <span class="text-xs px-2 py-0.5 rounded bg-sky-950 text-sky-400 border border-sky-800">Pro Looper Engine</span>
             </h1>
         </div>
 
@@ -75,7 +53,7 @@
         <div class="flex items-center space-x-3 text-xs">
             <label class="cursor-pointer bg-sky-600 hover:bg-sky-500 text-white font-medium px-3 py-1.5 rounded-md flex items-center space-x-1.5 transition">
                 <i class="fa-solid fa-folder-open"></i>
-                <span>打开音视频文件</span>
+                <span>打开音频/视频文件</span>
                 <input type="file" id="mediaFileInput" accept="video/*,audio/*,.mp3,.wav,.m4a,.flac,.aac,.ogg" class="hidden">
             </label>
             <div class="h-4 w-px bg-slate-700"></div>
@@ -84,12 +62,10 @@
                 <i class="fa-solid fa-floppy-disk"></i>
                 <span id="saveBtnText">保存笔记 (⌘S)</span>
             </button>
-            <!-- Save As Btn -->
             <button id="saveAsNoteBtn" class="bg-slate-800 hover:bg-slate-700 text-slate-200 px-2.5 py-1.5 rounded-md border border-slate-700 flex items-center space-x-1 transition" title="另存为新文件">
                 <i class="fa-solid fa-file-export text-sky-400"></i>
                 <span>另存为...</span>
             </button>
-            <!-- Native Open File Button -->
             <button id="openNativeFileBtn" class="bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-md border border-slate-700 flex items-center space-x-1.5 transition" title="打开本地笔记文件并开启直接覆盖权限">
                 <i class="fa-solid fa-file-import text-amber-400"></i>
                 <span>打开/绑定本地文件</span>
@@ -100,29 +76,27 @@
     <!-- Main Studio Split Layout -->
     <div id="mainContainer" class="flex-1 flex flex-col md:flex-row overflow-hidden relative">
         
-        <!-- Left Panel: Video/Audio Analysis Studio -->
+        <!-- Left Panel: Player & Waveform Studio -->
         <div id="leftPanel" class="flex-1 flex flex-col min-w-[320px] bg-slate-900/50 overflow-hidden">
             
-            <!-- Video / Audio Player Window -->
+            <!-- Player Window / Cover -->
             <div id="mediaContainer" class="flex-1 bg-black flex items-center justify-center relative overflow-hidden group">
-                <video id="mainMedia" class="max-h-full max-w-full object-contain"></video>
+                <video id="mainVideo" class="max-h-full max-w-full object-contain hidden"></video>
 
-                <!-- Audio Placeholder Cover -->
-                <div id="audioPlaceholder" class="hidden flex-col items-center justify-center space-y-3 text-slate-500">
-                    <i class="fa-solid fa-music text-6xl text-sky-500/80 animate-pulse"></i>
-                    <span id="audioFileName" class="text-sm font-medium text-slate-400">纯音频模式播放中</span>
+                <div id="audioCoverBox" class="flex flex-col items-center justify-center space-y-3 text-slate-500">
+                    <div class="w-20 h-20 rounded-full bg-slate-900 border border-slate-800 flex items-center justify-center shadow-2xl">
+                        <i class="fa-solid fa-music text-3xl text-sky-400 animate-pulse"></i>
+                    </div>
+                    <span id="mediaFileName" class="text-sm font-medium text-slate-400">请打开音频或视频文件开始分析</span>
                 </div>
                 
-                <!-- Custom Floating Media Controls Overlay -->
+                <!-- Custom Floating Controls Overlay -->
                 <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent p-3 opacity-0 group-hover:opacity-100 transition-opacity flex items-center space-x-3">
                     <button id="playPauseBtn" class="text-white hover:text-sky-400 text-xl w-8 h-8 flex items-center justify-center">
                         <i class="fa-solid fa-play"></i>
                     </button>
                     <span id="currentTimeDisplay" class="text-xs font-mono text-slate-300">00:00.0 / 00:00.0</span>
-                    <input type="range" id="mediaProgressBar" value="0" step="0.01" class="flex-1 accent-sky-500 bg-slate-700 h-1.5 rounded cursor-pointer">
-                    <button id="muteBtn" class="text-slate-300 hover:text-white text-sm">
-                        <i class="fa-solid fa-volume-high"></i>
-                    </button>
+                    <input type="range" id="mediaProgressBar" value="0" step="0.001" min="0" max="100" class="flex-1 accent-sky-500 bg-slate-700 h-1.5 rounded cursor-pointer">
                 </div>
             </div>
 
@@ -148,7 +122,6 @@
 
                         <div class="h-3 w-px bg-slate-700 mx-1"></div>
 
-                        <!-- Auto-Scroll Toggle Button -->
                         <button id="toggleAutoScrollBtn" class="px-2.5 py-0.5 bg-sky-950 hover:bg-sky-900 text-sky-300 border border-sky-800 rounded flex items-center space-x-1 transition">
                             <i class="fa-solid fa-arrows-to-eye"></i>
                             <span>波形跟随: <b id="autoScrollStatusText" class="text-emerald-400">开</b></span>
@@ -181,7 +154,7 @@
                         <button id="aMinusBtn" class="px-1.5 py-0.5 bg-slate-800 rounded hover:bg-slate-700">-0.1s</button>
                         <button id="aPlusBtn" class="px-1.5 py-0.5 bg-slate-800 rounded hover:bg-slate-700">+0.1s</button>
                     </div>
-                    <div class="text-slate-500 text-[10px]">单击波形设A点(自动加1秒作为B点) | 拖拽直接划选A-B | 按住选区平移</div>
+                    <div class="text-slate-500 text-[10px]">单击设A点(+1s为B) | 拖拽划选 | 按住中间平移</div>
                     <div class="flex items-center space-x-2">
                         <span class="text-rose-400">B 点:</span>
                         <input type="number" id="inputTimeB" step="0.1" min="0" value="0.0" class="w-16 bg-slate-950 border border-slate-700 rounded px-1 text-rose-400">
@@ -192,13 +165,11 @@
             </div>
         </div>
 
-        <!-- Vertical Split Resizer between Media and Note Panel -->
+        <!-- Vertical Split Resizer -->
         <div id="panelResizer" class="resizer-v bg-slate-800 hover:bg-sky-500 transition-colors hidden md:block border-x border-slate-700/50"></div>
 
-        <!-- Right Panel: Note Editor Only -->
+        <!-- Right Panel: Note Editor -->
         <div id="rightPanel" class="w-full md:w-[420px] flex flex-col bg-slate-900 shrink-0 border-l border-slate-800">
-            
-            <!-- Note Editor Header -->
             <div class="p-3 bg-slate-900 border-b border-slate-800 flex items-center justify-between">
                 <div class="flex items-center space-x-2">
                     <i class="fa-solid fa-pen-to-square text-amber-400 text-sm"></i>
@@ -210,12 +181,10 @@
                 </button>
             </div>
 
-            <!-- Note Textarea -->
             <div class="flex-1 p-3 bg-slate-900 flex flex-col">
                 <textarea id="noteTextarea" class="w-full flex-1 bg-slate-950 text-slate-100 p-3 rounded-lg border border-slate-800 focus:border-sky-500 focus:outline-none font-sans text-sm resize-none leading-relaxed" placeholder="在此输入笔记内容... 点击右上方按钮可随时插入带有播放时间的快捷跳转链接 [MM:SS]"></textarea>
             </div>
 
-            <!-- Note Status Footer -->
             <div class="h-8 bg-slate-950 border-t border-slate-800 px-3 flex items-center justify-between text-[11px] text-slate-500">
                 <span id="saveStateText" class="text-amber-400/80">未绑定文件（首次保存将要求选择一次保存路径）</span>
                 <span id="wordCountText">0 字</span>
@@ -225,16 +194,13 @@
 
     <!-- JavaScript Application Logic -->
     <script>
-        // DOM Elements
         const mediaFileInput = document.getElementById('mediaFileInput');
-        const mainMedia = document.getElementById('mainMedia');
-        const audioPlaceholder = document.getElementById('audioPlaceholder');
-        const audioFileName = document.getElementById('audioFileName');
-
+        const mainVideo = document.getElementById('mainVideo');
+        const audioCoverBox = document.getElementById('audioCoverBox');
+        const mediaFileName = document.getElementById('mediaFileName');
         const playPauseBtn = document.getElementById('playPauseBtn');
         const currentTimeDisplay = document.getElementById('currentTimeDisplay');
         const mediaProgressBar = document.getElementById('mediaProgressBar');
-        const muteBtn = document.getElementById('muteBtn');
 
         const waveformScrollContainer = document.getElementById('waveformScrollContainer');
         const waveformCanvas = document.getElementById('waveformCanvas');
@@ -265,24 +231,24 @@
         const saveStateText = document.getElementById('saveStateText');
         const wordCountText = document.getElementById('wordCountText');
 
-        // Layout Resizers
-        const waveformResizer = document.getElementById('waveformResizer');
-        const waveformBox = document.getElementById('waveformBox');
-        const panelResizer = document.getElementById('panelResizer');
-        const leftPanel = document.getElementById('leftPanel');
-        const rightPanel = document.getElementById('rightPanel');
-
-        // Application State
+        // Web Audio API Native Looping Engine
+        let audioCtx = null;
         let audioBuffer = null;
+        let sourceNode = null;
+        let isPlaying = false;
+        let startTime = 0;
+        let pauseOffset = 0;
+
+        let mediaDuration = 0;
         let zoomLevel = 1.0;
         let isAutoScrollEnabled = true;
         let pointA = null;
         let pointB = null;
         let isLooping = false;
 
-        // Mouse Dragging & Animation Frame Throttle
+        let waveformCache = null;
         let isMouseDown = false;
-        let dragMode = null; // 'A', 'B', 'RANGE', 'SELECT'
+        let dragMode = null;
         let dragStartX = 0;
         let dragStartA = 0;
         let dragStartB = 0;
@@ -291,31 +257,161 @@
         let renderPending = false;
         let currentFileHandle = null;
 
-        // Ultra-Smooth Jump (Pure Hardware Mute/Unmute Ramping to eliminate pops)
-        function cleanJumpTo(targetTime) {
-            const isPaused = mainMedia.paused;
-            mainMedia.muted = true;
-            mainMedia.currentTime = targetTime;
-            setTimeout(() => {
-                mainMedia.muted = false;
-            }, 12);
+        // --- 1. Load Audio & Build Cache ---
+        async function loadMediaFile(file) {
+            try {
+                stopAudio();
+                const arrayBuffer = await file.arrayBuffer();
+                if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                
+                audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+                mediaDuration = audioBuffer.duration;
+                
+                mediaFileName.textContent = file.name;
+                audioCoverBox.classList.remove('hidden');
+                audioCoverBox.classList.add('flex');
+                mainVideo.classList.add('hidden');
+
+                buildWaveformCache(audioBuffer);
+                requestDrawWaveform();
+                updateProgress();
+            } catch (err) {
+                console.error('音频解码失败:', err);
+                alert('无法解析该音视频文件，请尝试其他 mp3 / wav / mp4 格式。');
+            }
         }
 
-        // --- 1. Audio Processing & Waveform Extraction ---
-        async function loadMediaAudio(file) {
-            try {
-                const arrayBuffer = await file.arrayBuffer();
-                const tempCtx = new (window.AudioContext || window.webkitAudioContext)();
-                audioBuffer = await tempCtx.decodeAudioData(arrayBuffer);
-                requestDrawWaveform();
-            } catch (err) {
-                console.warn('音频轨解析提示：文件可能无音频轨或格式不兼容。', err);
-                audioBuffer = null;
+        function buildWaveformCache(buf) {
+            const rawData = buf.getChannelData(0);
+            const totalSamples = rawData.length;
+            const cacheBins = 2500;
+            const step = Math.ceil(totalSamples / cacheBins);
+            waveformCache = new Float32Array(cacheBins);
+
+            let maxAmp = 0;
+            for (let i = 0; i < cacheBins; i++) {
+                let max = 0;
+                const start = i * step;
+                for (let j = 0; j < step && (start + j) < totalSamples; j++) {
+                    const val = Math.abs(rawData[start + j]);
+                    if (val > max) max = val;
+                }
+                waveformCache[i] = max;
+                if (max > maxAmp) maxAmp = max;
+            }
+            if (maxAmp > 0) {
+                for (let i = 0; i < cacheBins; i++) { waveformCache[i] /= maxAmp; }
+            }
+        }
+
+        mediaFileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) loadMediaFile(file);
+        });
+
+        // --- 2. Hardware Native Web Audio Playback Engine (Zero Noise, Zero Lag) ---
+        function playAudio(offset = 0) {
+            if (!audioBuffer) return;
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+
+            stopAudio();
+
+            sourceNode = audioCtx.createBufferSource();
+            sourceNode.buffer = audioBuffer;
+
+            // Handle AB Loop natively via Web Audio API loop properties
+            if (isLooping && pointA !== null && pointB !== null && pointA < pointB) {
+                if (offset < pointA || offset >= pointB) offset = pointA;
+                sourceNode.loop = true;
+                sourceNode.loopStart = pointA;
+                sourceNode.loopEnd = pointB;
+            } else {
+                sourceNode.loop = false;
+            }
+
+            sourceNode.connect(audioCtx.destination);
+            sourceNode.start(0, offset);
+
+            startTime = audioCtx.currentTime - offset;
+            isPlaying = true;
+            playPauseBtn.innerHTML = '<i class="fa-solid fa-pause"></i>';
+
+            sourceNode.onended = () => {
+                if (!isLooping && isPlaying && (getCurrentTime() >= mediaDuration - 0.1)) {
+                    stopAudio();
+                    pauseOffset = 0;
+                }
+            };
+
+            requestAnimationFrame(trackProgress);
+        }
+
+        function stopAudio() {
+            if (sourceNode) {
+                try { sourceNode.stop(); sourceNode.disconnect(); } catch(e){}
+                sourceNode = null;
+            }
+            isPlaying = false;
+            playPauseBtn.innerHTML = '<i class="fa-solid fa-play"></i>';
+        }
+
+        function getCurrentTime() {
+            if (!isPlaying) return pauseOffset;
+            let cur = audioCtx.currentTime - startTime;
+            if (isLooping && pointA !== null && pointB !== null && pointA < pointB) {
+                if (cur >= pointB) {
+                    // Loop wrap around calculation
+                    const len = pointB - pointA;
+                    cur = pointA + ((cur - pointA) % len);
+                }
+            }
+            return Math.min(mediaDuration, Math.max(0, cur));
+        }
+
+        function seekAudio(targetTime) {
+            pauseOffset = Math.max(0, Math.min(mediaDuration, targetTime));
+            if (isPlaying) {
+                playAudio(pauseOffset);
+            } else {
+                updateProgress();
                 requestDrawWaveform();
             }
         }
 
-        // Request animation frame to eliminate drag latency
+        function togglePlay() {
+            if (!audioBuffer) return;
+            if (isPlaying) {
+                pauseOffset = getCurrentTime();
+                stopAudio();
+            } else {
+                playAudio(pauseOffset);
+            }
+        }
+
+        playPauseBtn.addEventListener('click', togglePlay);
+        audioCoverBox.addEventListener('click', togglePlay);
+
+        function trackProgress() {
+            if (!isPlaying) return;
+            updateProgress();
+            requestDrawWaveform();
+            requestAnimationFrame(trackProgress);
+        }
+
+        function updateProgress() {
+            const cur = getCurrentTime();
+            currentTimeDisplay.textContent = `${formatTime(cur)} / ${formatTime(mediaDuration)}`;
+            mediaProgressBar.value = mediaDuration ? (cur / mediaDuration) * 100 : 0;
+        }
+
+        mediaProgressBar.addEventListener('input', (e) => {
+            const dur = mediaDuration;
+            if (dur) {
+                seekAudio((e.target.value / 100) * dur);
+            }
+        });
+
+        // --- 3. Waveform Rendering ---
         function requestDrawWaveform() {
             if (!renderPending) {
                 renderPending = true;
@@ -337,39 +433,23 @@
             ctx.fillStyle = '#020617';
             ctx.fillRect(0, 0, canvasWidth, canvasHeight);
 
-            if (!audioBuffer) {
+            if (!waveformCache) {
                 ctx.fillStyle = '#475569';
                 ctx.font = '12px sans-serif';
                 ctx.textAlign = 'center';
-                ctx.fillText('选择或拖入音视频文件后在此呈现极清晰波形', canvasWidth / 2, canvasHeight / 2);
+                ctx.fillText('请点击上方打开音频文件，此处将呈现极速高清无噪音波形', canvasWidth / 2, canvasHeight / 2);
                 return;
             }
 
-            const rawData = audioBuffer.getChannelData(0);
-            const totalSamples = rawData.length;
-            const step = Math.ceil(totalSamples / canvasWidth);
             const midY = canvasHeight / 2;
-
-            let maxAmp = 0;
-            const peaks = new Float32Array(canvasWidth);
-            for (let i = 0; i < canvasWidth; i++) {
-                let min = 1.0, max = -1.0;
-                const start = i * step;
-                for (let j = 0; j < step && (start + j) < totalSamples; j++) {
-                    const val = rawData[start + j];
-                    if (val < min) min = val;
-                    if (val > max) max = val;
-                }
-                const amp = Math.max(Math.abs(min), Math.abs(max));
-                peaks[i] = amp;
-                if (amp > maxAmp) maxAmp = amp;
-            }
-
-            const scale = maxAmp > 0 ? (midY * 0.85) / maxAmp : midY * 0.85;
+            const maxBarHeight = midY * 0.85;
+            const cacheBins = waveformCache.length;
 
             ctx.fillStyle = '#38bdf8';
             for (let i = 0; i < canvasWidth; i++) {
-                const h = peaks[i] * scale;
+                const cacheIdx = Math.floor((i / canvasWidth) * cacheBins);
+                const amp = waveformCache[cacheIdx] || 0;
+                const h = amp * maxBarHeight;
                 ctx.fillRect(i, midY - h, 1, h * 2 || 1);
             }
 
@@ -379,7 +459,7 @@
             ctx.lineTo(canvasWidth, midY);
             ctx.stroke();
 
-            const duration = mainMedia.duration || audioBuffer.duration;
+            const duration = mediaDuration;
             if (duration > 0) {
                 if (pointA !== null && pointB !== null) {
                     const xA = (pointA / duration) * canvasWidth;
@@ -422,124 +502,41 @@
                     ctx.fillText('B', xB, 12);
                 }
 
-                const playX = (mainMedia.currentTime / duration) * canvasWidth;
+                const playX = (getCurrentTime() / duration) * canvasWidth;
                 ctx.strokeStyle = '#f59e0b';
                 ctx.lineWidth = 2;
                 ctx.beginPath();
                 ctx.moveTo(playX, 0);
                 ctx.lineTo(playX, canvasHeight);
                 ctx.stroke();
+
+                if (isAutoScrollEnabled && zoomLevel > 1.0) {
+                    const containerWidth = waveformScrollContainer.clientWidth;
+                    waveformScrollContainer.scrollLeft = playX - containerWidth / 2;
+                }
             }
         }
 
-        // --- 2. Media Player & Progress Interactions ---
-        mediaFileInput.addEventListener('change', (e) => {
-            const file = e.target.files[0];
-            if (file) {
-                const url = URL.createObjectURL(file);
-                mainMedia.src = url;
-
-                if (file.type.startsWith('audio/')) {
-                    audioPlaceholder.classList.remove('hidden');
-                    audioPlaceholder.classList.add('flex');
-                    audioFileName.textContent = file.name;
-                    mainMedia.classList.add('hidden');
-                } else {
-                    audioPlaceholder.classList.add('hidden');
-                    audioPlaceholder.classList.remove('flex');
-                    mainMedia.classList.remove('hidden');
-                }
-
-                loadMediaAudio(file);
-            }
-        });
-
-        playPauseBtn.addEventListener('click', togglePlay);
-        mainMedia.addEventListener('click', togglePlay);
-        audioPlaceholder.addEventListener('click', togglePlay);
-
-        function togglePlay() {
-            if (mainMedia.paused) {
-                mainMedia.play();
-                playPauseBtn.innerHTML = '<i class="fa-solid fa-pause"></i>';
-            } else {
-                mainMedia.pause();
-                playPauseBtn.innerHTML = '<i class="fa-solid fa-play"></i>';
-            }
-        }
-
-        mainMedia.addEventListener('timeupdate', () => {
-            const cur = mainMedia.currentTime;
-            const dur = mainMedia.duration || 0;
-
-            currentTimeDisplay.textContent = `${formatTime(cur)} / ${formatTime(dur)}`;
-            mediaProgressBar.value = dur ? (cur / dur) * 100 : 0;
-
-            // Strict AB Loop Check with Hardware Mute Smooth Jumping
-            if (isLooping && pointA !== null && pointB !== null && pointA < pointB) {
-                if (cur >= pointB || cur < pointA) {
-                    cleanJumpTo(pointA);
-                }
-            }
-
-            if (isAutoScrollEnabled && zoomLevel > 1.0 && dur > 0) {
-                const canvasWidth = waveformCanvas.width;
-                const playX = (cur / dur) * canvasWidth;
-                const containerWidth = waveformScrollContainer.clientWidth;
-                waveformScrollContainer.scrollLeft = playX - containerWidth / 2;
-            }
-
-            requestDrawWaveform();
-        });
-
-        mediaProgressBar.addEventListener('input', (e) => {
-            const dur = mainMedia.duration || 0;
-            if (dur) {
-                cleanJumpTo((e.target.value / 100) * dur);
-            }
-        });
-
-        // --- 3. Waveform Zoom & Non-Blocking Dragging ---
-        zoomInBtn.addEventListener('click', () => {
-            zoomLevel = Math.min(20.0, zoomLevel + 1.0);
-            zoomLevelDisplay.textContent = zoomLevel.toFixed(1) + 'x';
-            requestDrawWaveform();
-        });
-
-        zoomOutBtn.addEventListener('click', () => {
-            zoomLevel = Math.max(1.0, zoomLevel - 1.0);
-            zoomLevelDisplay.textContent = zoomLevel.toFixed(1) + 'x';
-            requestDrawWaveform();
-        });
-
-        toggleAutoScrollBtn.addEventListener('click', () => {
-            isAutoScrollEnabled = !isAutoScrollEnabled;
-            autoScrollStatusText.textContent = isAutoScrollEnabled ? '开' : '关';
-            autoScrollStatusText.className = isAutoScrollEnabled ? 'text-emerald-400' : 'text-rose-400';
-        });
+        // --- 4. Selection & Dragging ---
+        zoomInBtn.addEventListener('click', () => { zoomLevel = Math.min(20.0, zoomLevel + 1.0); zoomLevelDisplay.textContent = zoomLevel.toFixed(1) + 'x'; requestDrawWaveform(); });
+        zoomOutBtn.addEventListener('click', () => { zoomLevel = Math.max(1.0, zoomLevel - 1.0); zoomLevelDisplay.textContent = zoomLevel.toFixed(1) + 'x'; requestDrawWaveform(); });
+        toggleAutoScrollBtn.addEventListener('click', () => { isAutoScrollEnabled = !isAutoScrollEnabled; autoScrollStatusText.textContent = isAutoScrollEnabled ? '开' : '关'; autoScrollStatusText.className = isAutoScrollEnabled ? 'text-emerald-400' : 'text-rose-400'; });
 
         waveformCanvas.addEventListener('mousedown', (e) => {
             isMouseDown = true;
             dragStartX = e.clientX;
             const rect = waveformCanvas.getBoundingClientRect();
             const clickX = e.clientX - rect.left;
-            const duration = mainMedia.duration || 0;
-            if (!duration) return;
+            if (!mediaDuration) return;
 
-            const clickTime = (clickX / waveformCanvas.width) * duration;
+            const clickTime = (clickX / waveformCanvas.width) * mediaDuration;
 
             if (pointA !== null && pointB !== null) {
-                const xA = (pointA / duration) * waveformCanvas.width;
-                const xB = (pointB / duration) * waveformCanvas.width;
+                const xA = (pointA / mediaDuration) * waveformCanvas.width;
+                const xB = (pointB / mediaDuration) * waveformCanvas.width;
 
-                if (Math.abs(clickX - xA) < 12) {
-                    dragMode = 'A';
-                    return;
-                }
-                if (Math.abs(clickX - xB) < 12) {
-                    dragMode = 'B';
-                    return;
-                }
+                if (Math.abs(clickX - xA) < 12) { dragMode = 'A'; return; }
+                if (Math.abs(clickX - xB) < 12) { dragMode = 'B'; return; }
                 if (clickX > Math.min(xA, xB) && clickX < Math.max(xA, xB)) {
                     dragMode = 'RANGE';
                     dragOffsetTimeA = clickTime - pointA;
@@ -548,7 +545,6 @@
                     return;
                 }
             }
-
             dragMode = 'SELECT';
             dragStartA = clickTime;
             dragStartB = clickTime;
@@ -557,15 +553,13 @@
         window.addEventListener('mousemove', (e) => {
             const rect = waveformCanvas.getBoundingClientRect();
             const currentX = Math.max(0, Math.min(e.clientX - rect.left, waveformCanvas.width));
-            const duration = mainMedia.duration || 0;
+            if (!mediaDuration) return;
 
-            if (!duration) return;
-
-            const currentTime = (currentX / waveformCanvas.width) * duration;
+            const currentTime = (currentX / waveformCanvas.width) * mediaDuration;
 
             if (!isMouseDown && pointA !== null && pointB !== null) {
-                const xA = (pointA / duration) * waveformCanvas.width;
-                const xB = (pointB / duration) * waveformCanvas.width;
+                const xA = (pointA / mediaDuration) * waveformCanvas.width;
+                const xB = (pointB / mediaDuration) * waveformCanvas.width;
                 if (Math.abs(currentX - xA) < 12 || Math.abs(currentX - xB) < 12) {
                     waveformCanvas.style.cursor = 'col-resize';
                 } else if (currentX > Math.min(xA, xB) && currentX < Math.max(xA, xB)) {
@@ -577,14 +571,12 @@
 
             if (!isMouseDown || !dragMode) return;
 
-            if (dragMode === 'A') {
-                pointA = Math.min(currentTime, pointB - 0.1);
-            } else if (dragMode === 'B') {
-                pointB = Math.max(currentTime, pointA + 0.1);
-            } else if (dragMode === 'RANGE') {
+            if (dragMode === 'A') pointA = Math.min(currentTime, pointB - 0.1);
+            else if (dragMode === 'B') pointB = Math.max(currentTime, pointA + 0.1);
+            else if (dragMode === 'RANGE') {
                 let newA = currentTime - dragOffsetTimeA;
                 if (newA < 0) newA = 0;
-                if (newA + dragRangeDuration > duration) newA = duration - dragRangeDuration;
+                if (newA + dragRangeDuration > mediaDuration) newA = mediaDuration - dragRangeDuration;
                 pointA = newA;
                 pointB = newA + dragRangeDuration;
             } else if (dragMode === 'SELECT') {
@@ -599,58 +591,47 @@
 
         window.addEventListener('mouseup', (e) => {
             if (!isMouseDown) return;
-            const duration = mainMedia.duration || 0;
             const moveDist = Math.abs(e.clientX - dragStartX);
 
             if (dragMode === 'SELECT' && moveDist < 5) {
                 const rect = waveformCanvas.getBoundingClientRect();
                 const clickX = e.clientX - rect.left;
-                if (duration > 0) {
-                    const clickTime = (clickX / waveformCanvas.width) * duration;
+                if (mediaDuration > 0) {
+                    const clickTime = (clickX / waveformCanvas.width) * mediaDuration;
                     pointA = clickTime;
-                    pointB = Math.min(duration, clickTime + 1.0);
-                    cleanJumpTo(clickTime);
+                    pointB = Math.min(mediaDuration, clickTime + 1.0);
+                    seekAudio(clickTime);
                 }
             }
-
-            if (dragMode === 'RANGE') {
-                waveformCanvas.style.cursor = 'grab';
-            }
+            if (dragMode === 'RANGE') waveformCanvas.style.cursor = 'grab';
 
             isMouseDown = false;
             dragMode = null;
             enforceABConstraint();
             updateABInputs();
+            if (isLooping && isPlaying) playAudio(getCurrentTime());
             requestDrawWaveform();
         });
 
         function enforceABConstraint() {
             if (pointA !== null && pointB !== null) {
-                if (pointB < pointA) {
-                    const temp = pointA;
-                    pointA = pointB;
-                    pointB = temp;
-                }
-                if (pointB - pointA < 0.1) {
-                    pointB = pointA + 0.1;
-                }
+                if (pointB < pointA) { const t = pointA; pointA = pointB; pointB = t; }
+                if (pointB - pointA < 0.1) pointB = pointA + 0.1;
             }
         }
 
-        // AB Control Buttons
         toggleLoopBtn.addEventListener('click', () => {
             isLooping = !isLooping;
             loopStatusText.textContent = isLooping ? '开' : '关';
             loopStatusText.className = isLooping ? 'text-emerald-400' : 'text-rose-400';
+            if (isPlaying) playAudio(getCurrentTime());
         });
 
         clearABBtn.addEventListener('click', () => {
-            pointA = null;
-            pointB = null;
-            isLooping = false;
-            loopStatusText.textContent = '关';
-            loopStatusText.className = 'text-rose-400';
+            pointA = null; pointB = null; isLooping = false;
+            loopStatusText.textContent = '关'; loopStatusText.className = 'text-rose-400';
             updateABInputs();
+            if (isPlaying) playAudio(getCurrentTime());
             requestDrawWaveform();
         });
 
@@ -659,26 +640,14 @@
             inputTimeB.value = pointB !== null ? pointB.toFixed(1) : '0.0';
         }
 
-        inputTimeA.addEventListener('change', () => { 
-            pointA = parseFloat(inputTimeA.value) || 0; 
-            enforceABConstraint();
-            updateABInputs();
-            requestDrawWaveform(); 
-        });
+        inputTimeA.addEventListener('change', () => { pointA = parseFloat(inputTimeA.value) || 0; enforceABConstraint(); updateABInputs(); if(isPlaying)playAudio(getCurrentTime()); requestDrawWaveform(); });
+        inputTimeB.addEventListener('change', () => { pointB = parseFloat(inputTimeB.value) || 0; enforceABConstraint(); updateABInputs(); if(isPlaying)playAudio(getCurrentTime()); requestDrawWaveform(); });
+        aMinusBtn.addEventListener('click', () => { if (pointA !== null) { pointA = Math.max(0, pointA - 0.1); enforceABConstraint(); updateABInputs(); if(isPlaying)playAudio(getCurrentTime()); requestDrawWaveform(); } });
+        aPlusBtn.addEventListener('click', () => { if (pointA !== null) { pointA += 0.1; enforceABConstraint(); updateABInputs(); if(isPlaying)playAudio(getCurrentTime()); requestDrawWaveform(); } });
+        bMinusBtn.addEventListener('click', () => { if (pointB !== null) { pointB = Math.max(pointA + 0.1, pointB - 0.1); updateABInputs(); if(isPlaying)playAudio(getCurrentTime()); requestDrawWaveform(); } });
+        bPlusBtn.addEventListener('click', () => { if (pointB !== null) { pointB += 0.1; enforceABConstraint(); updateABInputs(); if(isPlaying)playAudio(getCurrentTime()); requestDrawWaveform(); } });
 
-        inputTimeB.addEventListener('change', () => { 
-            pointB = parseFloat(inputTimeB.value) || 0; 
-            enforceABConstraint();
-            updateABInputs();
-            requestDrawWaveform(); 
-        });
-
-        aMinusBtn.addEventListener('click', () => { if (pointA !== null) { pointA = Math.max(0, pointA - 0.1); enforceABConstraint(); updateABInputs(); requestDrawWaveform(); } });
-        aPlusBtn.addEventListener('click', () => { if (pointA !== null) { pointA += 0.1; enforceABConstraint(); updateABInputs(); requestDrawWaveform(); } });
-        bMinusBtn.addEventListener('click', () => { if (pointB !== null) { pointB = Math.max(pointA + 0.1, pointB - 0.1); enforceABConstraint(); updateABInputs(); requestDrawWaveform(); } });
-        bPlusBtn.addEventListener('click', () => { if (pointB !== null) { pointB += 0.1; enforceABConstraint(); updateABInputs(); requestDrawWaveform(); } });
-
-        // --- 4. Global Shortcuts ---
+        // --- 5. Shortcuts & Direct File Saving ---
         window.addEventListener('keydown', (e) => {
             if (e.code === 'Space' && document.activeElement !== noteTextarea && document.activeElement.tagName !== 'INPUT') {
                 e.preventDefault();
@@ -690,159 +659,75 @@
             }
         });
 
-        // --- 5. Direct File Saving with Real-Time Local Timestamp ---
         openNativeFileBtn.addEventListener('click', async () => {
             if ('showOpenFilePicker' in window) {
                 try {
-                    const [handle] = await window.showOpenFilePicker({
-                        types: [{ description: 'Markdown / Text', accept: { 'text/plain': ['.md', '.txt'] } }]
-                    });
+                    const [handle] = await window.showOpenFilePicker({ types: [{ description: 'Markdown/Text', accept: { 'text/plain': ['.md', '.txt'] } }] });
                     currentFileHandle = handle;
                     const file = await handle.getFile();
                     const text = await file.text();
                     noteTextarea.value = text;
-                    saveLocalBackup();
                     wordCountText.textContent = `${text.length} 字`;
-                    
-                    const timeNow = new Date().toLocaleTimeString();
-                    saveStateText.textContent = `已成功绑定原文件: ${handle.name} (${timeNow})`;
+                    saveStateText.textContent = `已成功绑定原文件: ${handle.name}`;
                     saveStateText.className = 'text-emerald-400 font-semibold';
                     saveBtnText.textContent = '覆写保存 (⌘S)';
-                } catch (err) {
-                    console.log('用户取消选择或授权未通过');
-                }
-            } else {
-                alert('请使用 Chrome 或 Edge 浏览器体验直接覆写本地文件功能。');
+                } catch (e) {}
             }
         });
 
         async function saveNoteDirectly() {
             const content = noteTextarea.value;
             const timeNow = new Date().toLocaleTimeString();
-
             if (currentFileHandle) {
                 try {
                     const writable = await currentFileHandle.createWritable();
                     await writable.write(content);
                     await writable.close();
-                    
-                    saveStateText.textContent = `已于 ${timeNow} 成功保存至: ${currentFileHandle.name}`;
+                    saveStateText.textContent = `已于 ${timeNow} 成功覆写保存至: ${currentFileHandle.name}`;
                     saveStateText.className = 'text-emerald-400 font-semibold';
                     return;
-                } catch (err) {
-                    console.warn('保存遇到阻碍，重新申请文件窗口:', err);
-                }
+                } catch (e) {}
             }
-
             if ('showSaveFilePicker' in window) {
                 try {
-                    currentFileHandle = await window.showSaveFilePicker({
-                        suggestedName: `Media_Note_${new Date().toISOString().slice(0, 10)}.md`,
-                        types: [{ description: 'Markdown / Text', accept: { 'text/plain': ['.md', '.txt'] } }]
-                    });
+                    currentFileHandle = await window.showSaveFilePicker({ suggestedName: `Note_${new Date().toISOString().slice(0, 10)}.md`, types: [{ description: 'Markdown', accept: { 'text/plain': ['.md', '.txt'] } }] });
                     const writable = await currentFileHandle.createWritable();
                     await writable.write(content);
                     await writable.close();
-                    
                     saveStateText.textContent = `已绑定并于 ${timeNow} 成功保存至: ${currentFileHandle.name}`;
                     saveStateText.className = 'text-emerald-400 font-semibold';
                     saveBtnText.textContent = '覆写保存 (⌘S)';
-                } catch (err) {
-                    // Cancelled
-                }
-            } else {
-                exportDownloadFallback(content);
+                } catch (e) {}
             }
         }
 
         saveNoteBtn.addEventListener('click', saveNoteDirectly);
+        saveAsNoteBtn.addEventListener('click', async () => { currentFileHandle = null; await saveNoteDirectly(); });
 
-        saveAsNoteBtn.addEventListener('click', async () => {
-            currentFileHandle = null;
-            await saveNoteDirectly();
+        insertTimestampBtn.addEventListener('click', () => {
+            const timeStr = `[${formatTime(getCurrentTime())}] `;
+            const start = noteTextarea.selectionStart;
+            const text = noteTextarea.value;
+            noteTextarea.value = text.substring(0, start) + timeStr + text.substring(noteTextarea.selectionEnd);
+            noteTextarea.selectionStart = noteTextarea.selectionEnd = start + timeStr.length;
+            noteTextarea.focus();
         });
 
-        function exportDownloadFallback(content) {
-            const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `Media_Note_${new Date().toISOString().slice(0, 10)}.md`;
-            a.click();
-            URL.revokeObjectURL(url);
-            saveStateText.textContent = `已于 ${new Date().toLocaleTimeString()} 导出下载`;
-        }
-
-        function saveLocalBackup() {
-            localStorage.setItem('studio_note_backup', noteTextarea.value);
-        }
-
         noteTextarea.addEventListener('input', () => {
-            saveLocalBackup();
+            localStorage.setItem('local_note_backup', noteTextarea.value);
             wordCountText.textContent = `${noteTextarea.value.length} 字`;
         });
 
-        insertTimestampBtn.addEventListener('click', () => {
-            const timeStr = `[${formatTime(mainMedia.currentTime)}] `;
-            const start = noteTextarea.selectionStart;
-            const end = noteTextarea.selectionEnd;
-            const text = noteTextarea.value;
-            noteTextarea.value = text.substring(0, start) + timeStr + text.substring(end);
-            noteTextarea.selectionStart = noteTextarea.selectionEnd = start + timeStr.length;
-            noteTextarea.focus();
-            saveLocalBackup();
-        });
+        const savedNote = localStorage.getItem('local_note_backup');
+        if (savedNote) { noteTextarea.value = savedNote; wordCountText.textContent = `${savedNote.length} 字`; }
 
-        // Load Stored Backup
-        const savedNote = localStorage.getItem('studio_note_backup');
-        if (savedNote) {
-            noteTextarea.value = savedNote;
-            wordCountText.textContent = `${savedNote.length} 字`;
+        function formatTime(sec) {
+            if (isNaN(sec)) return '00:00.0';
+            const m = Math.floor(sec / 60);
+            const s = (sec % 60).toFixed(1);
+            return `${m < 10 ? '0' + m : m}:${s < 10 ? '0' + s : s}`;
         }
 
-        // --- 6. Resizable Panels Logic ---
-        let isResizingWaveform = false;
-        waveformResizer.addEventListener('mousedown', () => { isResizingWaveform = true; });
-
-        let isResizingPanel = false;
-        panelResizer.addEventListener('mousedown', () => { isResizingPanel = true; });
-
-        window.addEventListener('mousemove', (e) => {
-            if (isResizingWaveform) {
-                const containerRect = leftPanel.getBoundingClientRect();
-                const newHeight = containerRect.bottom - e.clientY;
-                if (newHeight > 100 && newHeight < containerRect.height - 150) {
-                    waveformBox.style.height = `${newHeight}px`;
-                    requestDrawWaveform();
-                }
-            }
-
-            if (isResizingPanel) {
-                const containerWidth = document.getElementById('mainContainer').clientWidth;
-                const newWidth = containerWidth - e.clientX;
-                if (newWidth > 280 && newWidth < containerWidth - 350) {
-                    rightPanel.style.width = `${newWidth}px`;
-                    requestDrawWaveform();
-                }
-            }
-        });
-
-        window.addEventListener('mouseup', () => {
-            isResizingWaveform = false;
-            isResizingPanel = false;
-        });
-
-        // Helper: Format Seconds to MM:SS.s
-        function formatTime(seconds) {
-            if (isNaN(seconds)) return '00:00.0';
-            const m = Math.floor(seconds / 60);
-            const s = (seconds % 60).toFixed(1);
-            const mStr = m < 10 ? '0' + m : m;
-            const sStr = s < 10 ? '0' + s : s;
-            return `${mStr}:${sStr}`;
-        }
-
-        // Initial Canvas Draw
         window.addEventListener('resize', requestDrawWaveform);
         requestDrawWaveform();
     </script>
