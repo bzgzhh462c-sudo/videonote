@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AudioVisualizer Studio Pro - 完美工作站</title>
+    <title>AudioVisualizer Studio Pro - 精准工作站</title>
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -47,7 +47,7 @@
                 <i class="fa-solid fa-volume-high text-lg"></i>
             </div>
             <h1 class="text-base font-bold bg-gradient-to-r from-sky-400 to-blue-500 bg-clip-text text-transparent">
-                AudioVisualizer Studio Pro <span class="text-xs px-2 py-0.5 rounded bg-sky-950 text-sky-400 border border-sky-800">Ultimate Engine</span>
+                AudioVisualizer Studio Pro <span class="text-xs px-2 py-0.5 rounded bg-sky-950 text-sky-400 border border-sky-800">Precision Engine</span>
             </h1>
         </div>
 
@@ -68,10 +68,12 @@
                 <i class="fa-solid fa-file-export text-sky-400"></i>
                 <span>另存为...</span>
             </button>
-            <button id="openNativeFileBtn" class="bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-md border border-slate-700 flex items-center space-x-1.5 transition" title="打开本地笔记文件并开启直接覆盖权限">
+            <!-- Native / Backup Open Note File -->
+            <button id="openNativeFileBtn" class="bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-md border border-slate-700 flex items-center space-x-1.5 transition" title="打开本地笔记文件 (.txt / .md)">
                 <i class="fa-solid fa-file-import text-amber-400"></i>
                 <span>打开/绑定本地文件</span>
             </button>
+            <input type="file" id="fallbackNoteFileInput" accept=".txt,.md,.markdown,text/plain" class="hidden">
         </div>
     </header>
 
@@ -188,7 +190,7 @@
             </div>
 
             <div class="h-8 bg-slate-950 border-t border-slate-800 px-3 flex items-center justify-between text-[11px] text-slate-500">
-                <span id="saveStateText" class="text-amber-400/80">未绑定文件（首次保存将要求选择一次保存路径）</span>
+                <span id="saveStateText" class="text-amber-400/80">未绑定文件（保存将自动生成本地笔记文件）</span>
                 <span id="wordCountText">0 字</span>
             </div>
         </div>
@@ -229,18 +231,18 @@
         const saveBtnText = document.getElementById('saveBtnText');
         const saveAsNoteBtn = document.getElementById('saveAsNoteBtn');
         const openNativeFileBtn = document.getElementById('openNativeFileBtn');
+        const fallbackNoteFileInput = document.getElementById('fallbackNoteFileInput');
         const insertTimestampBtn = document.getElementById('insertTimestampBtn');
         const saveStateText = document.getElementById('saveStateText');
         const wordCountText = document.getElementById('wordCountText');
 
-        // Layout Resizers Elements
         const waveformResizer = document.getElementById('waveformResizer');
         const waveformBox = document.getElementById('waveformBox');
         const panelResizer = document.getElementById('panelResizer');
         const leftPanel = document.getElementById('leftPanel');
         const rightPanel = document.getElementById('rightPanel');
 
-        // Web Audio API Native Looping Engine
+        // Web Audio API Native Engine
         let audioCtx = null;
         let audioBuffer = null;
         let sourceNode = null;
@@ -255,7 +257,7 @@
         let pointB = null;
         let isLooping = false;
 
-        let rawChannelData = null; // High-res raw channel data for crisp crisp rendering
+        let rawChannelData = null;
         let isMouseDown = false;
         let dragMode = null;
         let dragStartX = 0;
@@ -265,8 +267,9 @@
         let dragRangeDuration = 0;
         let renderPending = false;
         let currentFileHandle = null;
+        let loadedFileName = '';
 
-        // --- 1. Load Audio & High-Res Storage ---
+        // --- 1. Load Audio ---
         async function loadMediaFile(file) {
             try {
                 stopAudio();
@@ -275,7 +278,7 @@
                 
                 audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
                 mediaDuration = audioBuffer.duration;
-                rawChannelData = audioBuffer.getChannelData(0); // Keep raw data for sharp rendering
+                rawChannelData = audioBuffer.getChannelData(0);
                 
                 mediaFileName.textContent = file.name;
                 audioCoverBox.classList.remove('hidden');
@@ -295,7 +298,7 @@
             if (file) loadMediaFile(file);
         });
 
-        // --- 2. Hardware Native Web Audio Playback Engine ---
+        // --- 2. Playback Control ---
         function playAudio(offset = 0) {
             if (!audioBuffer) return;
             if (audioCtx.state === 'suspended') audioCtx.resume();
@@ -390,12 +393,10 @@
 
         mediaProgressBar.addEventListener('input', (e) => {
             const dur = mediaDuration;
-            if (dur) {
-                seekAudio((e.target.value / 100) * dur);
-            }
+            if (dur) seekAudio((e.target.value / 100) * dur);
         });
 
-        // --- 3. Ultra-Crisp High-Resolution Waveform Rendering ---
+        // --- 3. Ultra-Crisp Waveform Rendering ---
         function requestDrawWaveform() {
             if (!renderPending) {
                 renderPending = true;
@@ -411,7 +412,6 @@
             const canvasWidth = Math.max(containerWidth, containerWidth * zoomLevel);
             const canvasHeight = waveformScrollContainer.clientHeight || 120;
 
-            // Retina High-DPI crisp rendering fix
             const dpr = window.devicePixelRatio || 1;
             waveformCanvas.width = canvasWidth * dpr;
             waveformCanvas.height = canvasHeight * dpr;
@@ -426,7 +426,7 @@
                 ctx.fillStyle = '#475569';
                 ctx.font = '13px sans-serif';
                 ctx.textAlign = 'center';
-                ctx.fillText('请点击上方打开音频文件，此处将呈现极清晰高清波形', canvasWidth / 2, canvasHeight / 2);
+                ctx.fillText('请点击上方打开音频文件，此处将呈现高精度绝无偏差波形', canvasWidth / 2, canvasHeight / 2);
                 return;
             }
 
@@ -435,7 +435,7 @@
             const totalSamples = rawChannelData.length;
             const step = Math.ceil(totalSamples / canvasWidth);
 
-            ctx.fillStyle = '#38bdf8'; // Crisp sky-400 waveform
+            ctx.fillStyle = '#38bdf8';
             for (let i = 0; i < canvasWidth; i++) {
                 let min = 1.0, max = -1.0;
                 const start = i * step;
@@ -449,7 +449,6 @@
                 ctx.fillRect(i, midY - h, 1, Math.max(1, h * 2));
             }
 
-            // Center Reference Line
             ctx.strokeStyle = '#1e293b';
             ctx.beginPath();
             ctx.moveTo(0, midY);
@@ -514,7 +513,17 @@
             }
         }
 
-        // --- 4. Selection, Dragging & 3-Second Rule ---
+        // --- 4. Precise Click Offset Fix & 3s Rule ---
+        function getCanvasTimeFromEvent(e) {
+            const rect = waveformCanvas.getBoundingClientRect();
+            // Critical Fix: Add scrollLeft offset to map screen pixel accurately
+            const scrollLeft = waveformScrollContainer.scrollLeft;
+            const clickX = (e.clientX - rect.left) + scrollLeft;
+            const duration = mediaDuration;
+            if (!duration) return 0;
+            return Math.max(0, Math.min(duration, (clickX / (waveformCanvas.width / (window.devicePixelRatio || 1))) * duration));
+        }
+
         zoomInBtn.addEventListener('click', () => { zoomLevel = Math.min(20.0, zoomLevel + 1.0); zoomLevelDisplay.textContent = zoomLevel.toFixed(1) + 'x'; requestDrawWaveform(); });
         zoomOutBtn.addEventListener('click', () => { zoomLevel = Math.max(1.0, zoomLevel - 1.0); zoomLevelDisplay.textContent = zoomLevel.toFixed(1) + 'x'; requestDrawWaveform(); });
         toggleAutoScrollBtn.addEventListener('click', () => { isAutoScrollEnabled = !isAutoScrollEnabled; autoScrollStatusText.textContent = isAutoScrollEnabled ? '开' : '关'; autoScrollStatusText.className = isAutoScrollEnabled ? 'text-emerald-400' : 'text-rose-400'; });
@@ -522,15 +531,16 @@
         waveformCanvas.addEventListener('mousedown', (e) => {
             isMouseDown = true;
             dragStartX = e.clientX;
-            const rect = waveformCanvas.getBoundingClientRect();
-            const clickX = e.clientX - rect.left;
             if (!mediaDuration) return;
 
-            const clickTime = (clickX / waveformCanvas.width) * mediaDuration;
+            const clickTime = getCanvasTimeFromEvent(e);
+            const canvasWidth = waveformCanvas.width / (window.devicePixelRatio || 1);
+            const scrollLeft = waveformScrollContainer.scrollLeft;
+            const clickX = (e.clientX - waveformCanvas.getBoundingClientRect().left) + scrollLeft;
 
             if (pointA !== null && pointB !== null) {
-                const xA = (pointA / mediaDuration) * waveformCanvas.width;
-                const xB = (pointB / mediaDuration) * waveformCanvas.width;
+                const xA = (pointA / mediaDuration) * canvasWidth;
+                const xB = (pointB / mediaDuration) * canvasWidth;
 
                 if (Math.abs(clickX - xA) < 12) { dragMode = 'A'; return; }
                 if (Math.abs(clickX - xB) < 12) { dragMode = 'B'; return; }
@@ -548,15 +558,15 @@
         });
 
         window.addEventListener('mousemove', (e) => {
-            const rect = waveformCanvas.getBoundingClientRect();
-            const currentX = Math.max(0, Math.min(e.clientX - rect.left, waveformCanvas.width));
             if (!mediaDuration) return;
-
-            const currentTime = (currentX / waveformCanvas.width) * mediaDuration;
+            const currentTime = getCanvasTimeFromEvent(e);
+            const canvasWidth = waveformCanvas.width / (window.devicePixelRatio || 1);
+            const scrollLeft = waveformScrollContainer.scrollLeft;
+            const currentX = (e.clientX - waveformCanvas.getBoundingClientRect().left) + scrollLeft;
 
             if (!isMouseDown && pointA !== null && pointB !== null) {
-                const xA = (pointA / mediaDuration) * waveformCanvas.width;
-                const xB = (pointB / mediaDuration) * waveformCanvas.width;
+                const xA = (pointA / mediaDuration) * canvasWidth;
+                const xB = (pointB / mediaDuration) * canvasWidth;
                 if (Math.abs(currentX - xA) < 12 || Math.abs(currentX - xB) < 12) {
                     waveformCanvas.style.cursor = 'col-resize';
                 } else if (currentX > Math.min(xA, xB) && currentX < Math.max(xA, xB)) {
@@ -591,12 +601,10 @@
             const moveDist = Math.abs(e.clientX - dragStartX);
 
             if (dragMode === 'SELECT' && moveDist < 5) {
-                const rect = waveformCanvas.getBoundingClientRect();
-                const clickX = e.clientX - rect.left;
                 if (mediaDuration > 0) {
-                    const clickTime = (clickX / waveformCanvas.width) * mediaDuration;
+                    const clickTime = getCanvasTimeFromEvent(e);
                     pointA = clickTime;
-                    pointB = Math.min(mediaDuration, clickTime + 3.0); // 3-second gap rule
+                    pointB = Math.min(mediaDuration, clickTime + 3.0); // Exact 3s gap
                     seekAudio(clickTime);
                 }
             }
@@ -644,7 +652,7 @@
         bMinusBtn.addEventListener('click', () => { if (pointB !== null) { pointB = Math.max(pointA + 0.1, pointB - 0.1); updateABInputs(); if(isPlaying)playAudio(getCurrentTime()); requestDrawWaveform(); } });
         bPlusBtn.addEventListener('click', () => { if (pointB !== null) { pointB += 0.1; enforceABConstraint(); updateABInputs(); if(isPlaying)playAudio(getCurrentTime()); requestDrawWaveform(); } });
 
-        // --- 5. Shortcuts & Direct File Saving (Fixed & Restored) ---
+        // --- 5. Robust Universal File Open/Save System ---
         window.addEventListener('keydown', (e) => {
             if (e.code === 'Space' && document.activeElement !== noteTextarea && document.activeElement.tagName !== 'INPUT') {
                 e.preventDefault();
@@ -656,29 +664,49 @@
             }
         });
 
+        // Trigger Note File Opening (Supports Chrome, Edge, Safari, Firefox)
         openNativeFileBtn.addEventListener('click', async () => {
             if ('showOpenFilePicker' in window) {
                 try {
                     const [handle] = await window.showOpenFilePicker({ types: [{ description: 'Markdown/Text', accept: { 'text/plain': ['.md', '.txt'] } }] });
                     currentFileHandle = handle;
                     const file = await handle.getFile();
+                    loadedFileName = file.name;
                     const text = await file.text();
                     noteTextarea.value = text;
                     wordCountText.textContent = `${text.length} 字`;
-                    saveStateText.textContent = `已成功绑定原文件: ${handle.name}`;
+                    saveStateText.textContent = `已成功绑定原文件: ${file.name}`;
                     saveStateText.className = 'text-emerald-400 font-semibold';
                     saveBtnText.textContent = '覆写保存 (⌘S)';
                 } catch (e) {
-                    console.log('取消打开本地文件');
+                    console.log('用户取消选择');
                 }
             } else {
-                alert('您的浏览器不支持直接文件读取 API，请使用 Chrome 或 Edge 浏览器。');
+                // Fallback for Safari & Firefox
+                fallbackNoteFileInput.click();
+            }
+        });
+
+        fallbackNoteFileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = (evt) => {
+                    noteTextarea.value = evt.target.result;
+                    loadedFileName = file.name;
+                    wordCountText.textContent = `${evt.target.result.length} 字`;
+                    saveStateText.textContent = `已载入文本: ${file.name}`;
+                    saveStateText.className = 'text-emerald-400 font-semibold';
+                };
+                reader.readAsText(file);
             }
         });
 
         async function saveNoteDirectly() {
             const content = noteTextarea.value;
             const timeNow = new Date().toLocaleTimeString();
+
+            // Native Chrome/Edge Silent Overwrite
             if (currentFileHandle) {
                 try {
                     const writable = await currentFileHandle.createWritable();
@@ -688,29 +716,39 @@
                     saveStateText.className = 'text-emerald-400 font-semibold';
                     return;
                 } catch (e) {
-                    console.warn('覆写失败，重新请求权限');
+                    console.warn('覆写失败，尝试切换导出');
                 }
             }
+
             if ('showSaveFilePicker' in window) {
                 try {
-                    currentFileHandle = await window.showSaveFilePicker({ suggestedName: `Note_${new Date().toISOString().slice(0, 10)}.md`, types: [{ description: 'Markdown', accept: { 'text/plain': ['.md', '.txt'] } }] });
+                    currentFileHandle = await window.showSaveFilePicker({ suggestedName: loadedFileName || `Note_${new Date().toISOString().slice(0, 10)}.md`, types: [{ description: 'Markdown/Text', accept: { 'text/plain': ['.md', '.txt'] } }] });
                     const writable = await currentFileHandle.createWritable();
                     await writable.write(content);
                     await writable.close();
                     saveStateText.textContent = `已绑定并于 ${timeNow} 成功保存至: ${currentFileHandle.name}`;
                     saveStateText.className = 'text-emerald-400 font-semibold';
                     saveBtnText.textContent = '覆写保存 (⌘S)';
-                } catch (e) {}
-            } else {
-                const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `Note_${new Date().toISOString().slice(0, 10)}.md`;
-                a.click();
-                URL.revokeObjectURL(url);
-                saveStateText.textContent = `已于 ${timeNow} 导出下载`;
+                    return;
+                } catch (e) {
+                    return;
+                }
             }
+
+            // Universal Fallback for Safari/Firefox
+            downloadTextFile(content, loadedFileName || `Note_${new Date().toISOString().slice(0, 10)}.txt`);
+            saveStateText.textContent = `已于 ${timeNow} 成功导出到本地下载`;
+            saveStateText.className = 'text-emerald-400 font-semibold';
+        }
+
+        function downloadTextFile(content, filename) {
+            const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            a.click();
+            URL.revokeObjectURL(url);
         }
 
         saveNoteBtn.addEventListener('click', saveNoteDirectly);
@@ -733,7 +771,7 @@
         const savedNote = localStorage.getItem('local_note_backup');
         if (savedNote) { noteTextarea.value = savedNote; wordCountText.textContent = `${savedNote.length} 字`; }
 
-        // --- 6. Resizable Panels & Waveform Height Logic ---
+        // --- 6. Resizable Panels ---
         let isResizingH = false;
         waveformResizer.addEventListener('mousedown', (e) => { isResizingH = true; e.preventDefault(); });
 
