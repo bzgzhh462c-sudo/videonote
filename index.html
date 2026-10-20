@@ -377,7 +377,7 @@
       playPauseBtn.innerHTML = '<i class="fa-solid fa-play"></i>';
       stopProgressLoop();
     }
-// ========== 进一步优化的安全视频 Seek（减少残余噪声） ==========
+// ========== 针对单击尖锐噪声的强化版 safeVideoSeek ==========
 function safeVideoSeek(time, onDone) {
   if (!isVideoMode) return;
   if (isSeekingVideo) return;
@@ -387,15 +387,16 @@ function safeVideoSeek(time, onDone) {
   const originalVolume = mainVideo.volume;
   const target = Math.max(0, Math.min(mediaDuration || mainVideo.duration || 0, time));
 
-  // 已经非常接近，直接跳过
-  if (Math.abs(mainVideo.currentTime - target) < 0.04) {
+  // 已经非常接近目标，直接返回（减少不必要 seek）
+  if (Math.abs(mainVideo.currentTime - target) < 0.03) {
     isSeekingVideo = false;
     if (typeof onDone === 'function') onDone();
     else if (wasPlaying) mainVideo.play().catch(() => {});
     return;
   }
 
-  // 1. 先把音量降到 0（比 muted 更可控）
+  // 1. 强制静音 + 暂停（最关键）
+  mainVideo.muted = true;
   mainVideo.volume = 0;
   mainVideo.pause();
 
@@ -407,25 +408,30 @@ function safeVideoSeek(time, onDone) {
     if (finished) return;
     finished = true;
 
-    // 3. 给解码器一点额外时间稳定（关键！）
+    // 3. 再多等一点时间，让解码器完全稳定（针对尖锐噪声）
     setTimeout(() => {
-      // 恢复音量
+      // 先恢复 volume，但保持 muted
       mainVideo.volume = originalVolume;
-      isSeekingVideo = false;
-      updateProgress();
-      requestDrawWaveform();
 
-      if (typeof onDone === 'function') {
-        onDone();
-      } else if (wasPlaying) {
-        mainVideo.play().catch(e => console.warn('resume after seek', e));
-      }
-    }, 50); // 30~50ms 比较平衡，可按体验微调
+      // 再等一帧后才取消 muted（双重保险）
+      requestAnimationFrame(() => {
+        mainVideo.muted = false;
+        isSeekingVideo = false;
+        updateProgress();
+        requestDrawWaveform();
+
+        if (typeof onDone === 'function') {
+          onDone();
+        } else if (wasPlaying) {
+          mainVideo.play().catch(e => console.warn('resume after seek', e));
+        }
+      });
+    }, 60); // 60ms 是目前比较平衡的值，可调 50~80
   };
 
   const onSeeked = () => {
     mainVideo.removeEventListener('seeked', onSeeked);
-    // 双 rAF 再等一帧，进一步降低爆音概率
+    // 双 rAF + 延时，尽量避开解码器瞬时噪声
     requestAnimationFrame(() => {
       requestAnimationFrame(finish);
     });
@@ -433,7 +439,7 @@ function safeVideoSeek(time, onDone) {
   mainVideo.addEventListener('seeked', onSeeked);
 
   // 超时兜底
-  setTimeout(finish, 220);
+  setTimeout(finish, 250);
 }
     function seekMedia(targetTime) {
       const t = Math.max(0, Math.min(mediaDuration || 99999, targetTime));
