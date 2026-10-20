@@ -324,46 +324,59 @@
       return Math.min(mediaDuration, Math.max(0, cur));
     }
     function playMedia(offset = 0) {
-      previewTime = null;
-      if (isVideoMode) {
-        if (!mainVideo.src) return;
-        if (isLooping && pointA !== null && pointB !== null && pointA < pointB) {
-          if (offset < pointA || offset >= pointB) offset = pointA;
-        }
-        safeVideoSeek(offset, () => {
-          mainVideo.play().catch(e => console.warn('video play', e));
-        });
-        isPlaying = true;
-        playPauseBtn.innerHTML = '<i class="fa-solid fa-pause"></i>';
-        startProgressLoop();
-        return;
-      }
-      if (!audioBuffer) return;
-      if (audioCtx.state === 'suspended') audioCtx.resume();
-      stopAudioSource();
-      sourceNode = audioCtx.createBufferSource();
-      sourceNode.buffer = audioBuffer;
-      if (isLooping && pointA !== null && pointB !== null && pointA < pointB) {
-        if (offset < pointA || offset >= pointB) offset = pointA;
-        sourceNode.loop = true;
-        sourceNode.loopStart = pointA;
-        sourceNode.loopEnd = pointB;
-      } else {
-        sourceNode.loop = false;
-      }
-      sourceNode.connect(audioCtx.destination);
-      sourceNode.start(0, offset);
-      startTime = audioCtx.currentTime - offset;
-      isPlaying = true;
-      playPauseBtn.innerHTML = '<i class="fa-solid fa-pause"></i>';
-      sourceNode.onended = () => {
-        if (!isLooping && isPlaying) {
-          stopPlayback();
-          pauseOffset = 0;
-        }
-      };
-      startProgressLoop();
+  previewTime = null;
+  if (isVideoMode) {
+    if (!mainVideo.src) return;
+    if (isLooping && pointA !== null && pointB !== null && pointA < pointB) {
+      if (offset < pointA || offset >= pointB) offset = pointA;
     }
+    safeVideoSeek(offset, () => {
+      mainVideo.play().catch(e => console.warn('video play', e));
+    });
+    isPlaying = true;
+    playPauseBtn.innerHTML = '<i class="fa-solid fa-pause"></i>';
+    startProgressLoop();
+    return;
+  }
+
+  // ========== 纯音频部分（修复没声音） ==========
+  if (!audioBuffer) return;
+
+  const startAudio = () => {
+    stopAudioSource();
+    sourceNode = audioCtx.createBufferSource();
+    sourceNode.buffer = audioBuffer;
+    if (isLooping && pointA !== null && pointB !== null && pointA < pointB) {
+      if (offset < pointA || offset >= pointB) offset = pointA;
+      sourceNode.loop = true;
+      sourceNode.loopStart = pointA;
+      sourceNode.loopEnd = pointB;
+    } else {
+      sourceNode.loop = false;
+    }
+    sourceNode.connect(audioCtx.destination);
+    sourceNode.start(0, offset);
+    startTime = audioCtx.currentTime - offset;
+    isPlaying = true;
+    playPauseBtn.innerHTML = '<i class="fa-solid fa-pause"></i>';
+    sourceNode.onended = () => {
+      if (!isLooping && isPlaying) {
+        stopPlayback();
+        pauseOffset = 0;
+      }
+    };
+    startProgressLoop();
+  };
+
+  if (audioCtx.state === 'suspended') {
+    audioCtx.resume().then(startAudio).catch(err => {
+      console.warn('AudioContext resume failed', err);
+      startAudio(); // 兜底
+    });
+  } else {
+    startAudio();
+  }
+}
     function stopAudioSource() {
       if (sourceNode) {
         try { sourceNode.stop(); sourceNode.disconnect(); } catch (e) {}
@@ -380,9 +393,8 @@
       playPauseBtn.innerHTML = '<i class="fa-solid fa-play"></i>';
       stopProgressLoop();
     }
-// ========== 干净版 safeVideoSeek（只影响视频，不影响纯音频） ==========
 function safeVideoSeek(time, onDone) {
-  if (!isVideoMode) return;          // 纯音频直接跳过，绝不管
+  if (!isVideoMode) return;
   if (isSeekingVideo) return;
   isSeekingVideo = true;
 
@@ -398,7 +410,7 @@ function safeVideoSeek(time, onDone) {
     return;
   }
 
-  // 只对视频做静音处理
+  // 强制静音 + 暂停
   mainVideo.muted = true;
   mainVideo.volume = 0;
   mainVideo.pause();
@@ -409,21 +421,27 @@ function safeVideoSeek(time, onDone) {
     if (finished) return;
     finished = true;
 
+    // 给解码器更长的稳定时间（针对尖锐噪声）
     setTimeout(() => {
       mainVideo.volume = originalVolume;
-      requestAnimationFrame(() => {
-        mainVideo.muted = false;
-        isSeekingVideo = false;
-        updateProgress();
-        requestDrawWaveform();
 
-        if (typeof onDone === 'function') {
-          onDone();
-        } else if (wasPlaying) {
-          mainVideo.play().catch(e => console.warn('resume after seek', e));
-        }
+      // 再等两帧才取消 muted
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          mainVideo.muted = false;
+          isSeekingVideo = false;
+          updateProgress();
+          requestDrawWaveform();
+
+          if (typeof onDone === 'function') {
+            onDone();
+          } else if (wasPlaying) {
+            // 播放前再确保一次静音状态已解除
+            mainVideo.play().catch(e => console.warn('resume after seek', e));
+          }
+        });
       });
-    }, 60);
+    }, 80); // 可以试 60~100，数值越大噪声越少但延迟稍增
   };
 
   const onSeeked = () => {
@@ -434,7 +452,8 @@ function safeVideoSeek(time, onDone) {
   };
   mainVideo.addEventListener('seeked', onSeeked);
 
-  setTimeout(finish, 250);
+  // 超时兜底
+  setTimeout(finish, 280);
 }
     function seekMedia(targetTime) {
       const t = Math.max(0, Math.min(mediaDuration || 99999, targetTime));
