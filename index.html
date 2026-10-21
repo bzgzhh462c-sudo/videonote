@@ -226,7 +226,7 @@
     let dragRangeDuration = 0;
     let dragPlayheadOffset = 0;
     let previewTime = null;
-    let currentFileHandle = null;   // 核心：绑定的可写文件句柄
+    let currentFileHandle = null;   
     let loadedFileName = '';
     let waveformCache = null;
     let cacheWidth = 0;
@@ -234,7 +234,20 @@
     let cacheZoom = 0;
     let renderPending = false;
     let progressRAF = null;
-    let noteSaveTimer = null; // 笔记防抖定时器
+    let noteSaveTimer = null;
+
+    // 通用：确保并激活 AudioContext（特别是针对 Safari）
+    function getAudioContext() {
+      if (!audioCtx) {
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        audioCtx = new AudioContextClass();
+      }
+      if (audioCtx.state === 'suspended' || audioCtx.state === 'interrupted') {
+        audioCtx.resume().catch(err => console.warn('AudioContext resume 失败:', err));
+      }
+      return audioCtx;
+    }
+
     // ========== 1. Load Media ==========
     async function loadMediaFile(file) {
       try {
@@ -257,9 +270,10 @@
         const isVideo = file.type.startsWith('video/') ||
           /\.(mp4|webm|mov|mkv|m4v|avi)$/i.test(file.name);
         const arrayBuffer = await file.arrayBuffer();
-        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        
+        const ctxInstance = getAudioContext();
         try {
-          audioBuffer = await audioCtx.decodeAudioData(arrayBuffer.slice(0));
+          audioBuffer = await ctxInstance.decodeAudioData(arrayBuffer.slice(0));
           mediaDuration = audioBuffer.duration;
           rawChannelData = audioBuffer.getChannelData(0);
         } catch (decodeErr) {
@@ -326,92 +340,82 @@
       return Math.min(mediaDuration, Math.max(0, cur));
     }
     function playMedia(offset = 0) {
-  previewTime = null;
+      previewTime = null;
+      const ctxInstance = getAudioContext();
 
-  // ========== 视频模式 ==========
-  if (isVideoMode) {
-    if (!mainVideo.src) return;
-    if (isLooping && pointA !== null && pointB !== null && pointA < pointB) {
-      if (offset < pointA || offset >= pointB) offset = pointA;
-    }
-    safeVideoSeek(offset, async () => {
-      if (audioCtx && audioCtx.state === 'suspended') await audioCtx.resume();
-      return mainVideo.play().catch(e => { console.warn('video play', e); throw e; });
-    });
-    isPlaying = true;
-    playPauseBtn.innerHTML = '<i class="fa-solid fa-pause"></i>';
-    startProgressLoop();
-    return;
-  }
+      // ========== 视频模式 (Safari / Firefox 兼容) ==========
+      if (isVideoMode) {
+        if (!mainVideo.src) return;
+        if (isLooping && pointA !== null && pointB !== null && pointA < pointB) {
+          if (offset < pointA || offset >= pointB) offset = pointA;
+        }
+        
+        // 确保 Safari 能够通过 Web Audio 正常输出视频声音
+        ensureVideoAudioGraph();
 
-  // ========== 纯音频模式（强化版） ==========
-  if (!audioBuffer) {
-    console.warn('audioBuffer 为空，无法播放');
-    return;
-  }
-
-  // 确保 AudioContext 存在
-  if (!audioCtx) {
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  }
-
-  const doStart = () => {
-    try {
-      stopAudioSource();
-
-      sourceNode = audioCtx.createBufferSource();
-      sourceNode.buffer = audioBuffer;
-
-      if (isLooping && pointA !== null && pointB !== null && pointA < pointB) {
-        if (offset < pointA || offset >= pointB) offset = pointA;
-        sourceNode.loop = true;
-        sourceNode.loopStart = pointA;
-        sourceNode.loopEnd = pointB;
-      } else {
-        sourceNode.loop = false;
+        safeVideoSeek(offset, async () => {
+          if (ctxInstance.state === 'suspended') await ctxInstance.resume();
+          return mainVideo.play().catch(e => { console.warn('video play error:', e); throw e; });
+        });
+        isPlaying = true;
+        playPauseBtn.innerHTML = '<i class="fa-solid fa-pause"></i>';
+        startProgressLoop();
+        return;
       }
 
-      sourceNode.connect(audioCtx.destination);
-      sourceNode.start(0, Math.max(0, offset));
+      // ========== 纯音频模式 ==========
+      if (!audioBuffer) {
+        console.warn('audioBuffer 为空，无法播放');
+        return;
+      }
 
-      startTime = audioCtx.currentTime - offset;
-      isPlaying = true;
-      playPauseBtn.innerHTML = '<i class="fa-solid fa-pause"></i>';
+      const doStart = () => {
+        try {
+          stopAudioSource();
 
-      sourceNode.onended = () => {
-        if (!isLooping && isPlaying) {
-          stopPlayback();
-          pauseOffset = 0;
+          sourceNode = ctxInstance.createBufferSource();
+          sourceNode.buffer = audioBuffer;
+
+          if (isLooping && pointA !== null && pointB !== null && pointA < pointB) {
+            if (offset < pointA || offset >= pointB) offset = pointA;
+            sourceNode.loop = true;
+            sourceNode.loopStart = pointA;
+            sourceNode.loopEnd = pointB;
+          } else {
+            sourceNode.loop = false;
+          }
+
+          sourceNode.connect(ctxInstance.destination);
+          sourceNode.start(0, Math.max(0, offset));
+
+          startTime = ctxInstance.currentTime - offset;
+          isPlaying = true;
+          playPauseBtn.innerHTML = '<i class="fa-solid fa-pause"></i>';
+
+          sourceNode.onended = () => {
+            if (!isLooping && isPlaying) {
+              stopPlayback();
+              pauseOffset = 0;
+            }
+          };
+
+          startProgressLoop();
+        } catch (err) {
+          console.error('纯音频启动失败:', err);
         }
       };
 
-      startProgressLoop();
-      console.log('纯音频开始播放', { offset, state: audioCtx.state });
-    } catch (err) {
-      console.error('纯音频启动失败:', err);
-    }
-  };
-
-  // 关键：强制 resume，并等待真正 running
-  if (audioCtx.state === 'suspended' || audioCtx.state === 'interrupted') {
-    audioCtx.resume().then(() => {
-      // 再确认一次状态
-      if (audioCtx.state === 'running') {
-        doStart();
+      if (ctxInstance.state === 'suspended' || ctxInstance.state === 'interrupted') {
+        ctxInstance.resume().then(() => {
+          doStart();
+        }).catch(err => {
+          console.warn('AudioContext resume 失败，尝试直接播放', err);
+          doStart();
+        });
       } else {
-        // 极端情况再试一次
-        setTimeout(() => {
-          audioCtx.resume().then(doStart).catch(doStart);
-        }, 50);
+        doStart();
       }
-    }).catch(err => {
-      console.warn('AudioContext resume 失败，尝试直接播放', err);
-      doStart();
-    });
-  } else {
-    doStart();
-  }
-}
+    }
     function stopAudioSource() {
       if (sourceNode) {
         try { sourceNode.stop(); sourceNode.disconnect(); } catch (e) {}
@@ -428,115 +432,106 @@
       playPauseBtn.innerHTML = '<i class="fa-solid fa-play"></i>';
       stopProgressLoop();
     }
-function ensureVideoAudioGraph() {
-  if (!isVideoMode || !mainVideo.src) return false;
-  if (videoGainNode) return true;
-  try {
-    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    // Connect the video element to Web Audio once. GainNode can provide a short
-    // fade around Safari's decoder seek transient; HTMLMediaElement.volume is
-    // not reliable enough for this purpose in Safari.
-    videoMediaSourceNode = audioCtx.createMediaElementSource(mainVideo);
-    videoGainNode = audioCtx.createGain();
-    videoGainNode.gain.value = 1;
-    videoMediaSourceNode.connect(videoGainNode);
-    videoGainNode.connect(audioCtx.destination);
-    return true;
-  } catch (err) {
-    console.warn('无法启用 Web Audio 视频淡入淡出，将使用普通跳转:', err);
-    return false;
-  }
-}
-
-function safeVideoSeek(time, onDone) {
-  if (!isVideoMode || !mainVideo.src || isSeekingVideo) return;
-  const hasGain = ensureVideoAudioGraph();
-  isSeekingVideo = true;
-  const wasPlaying = !mainVideo.paused && isPlaying;
-  const shouldResume = wasPlaying || typeof onDone === 'function';
-  const duration = Number.isFinite(mainVideo.duration) ? mainVideo.duration : mediaDuration;
-  const target = Math.max(0, Math.min(duration || 0, Number(time) || 0));
-  let finished = false;
-  let seekTimeout = null;
-  let resumeTimer = null;
-
-  const gainParam = hasGain ? videoGainNode.gain : null;
-  const gainNow = hasGain ? audioCtx.currentTime : 0;
-  const previousGain = hasGain ? gainParam.value : 1;
-
-  const fadeTo = (value, seconds) => {
-    if (!hasGain) return;
-    const now = audioCtx.currentTime;
-    gainParam.cancelScheduledValues(now);
-    gainParam.setValueAtTime(gainParam.value, now);
-    gainParam.linearRampToValueAtTime(value, now + seconds);
-  };
-  const restoreGain = () => {
-    if (hasGain && audioCtx) {
-      const now = audioCtx.currentTime;
-      gainParam.cancelScheduledValues(now);
-      gainParam.setValueAtTime(gainParam.value, now);
-      gainParam.linearRampToValueAtTime(previousGain || 1, now + 0.035);
-    }
-    isSeekingVideo = false;
-  };
-
-  const finish = () => {
-    if (finished) return;
-    finished = true;
-    if (seekTimeout !== null) clearTimeout(seekTimeout);
-    mainVideo.removeEventListener('seeked', onSeeked);
-    setTimeout(async () => {
-      updateProgress();
-      requestDrawWaveform();
-      if (!shouldResume) {
-        restoreGain();
-        return;
-      }
+    function ensureVideoAudioGraph() {
+      if (!isVideoMode || !mainVideo.src) return false;
+      if (videoGainNode) return true;
       try {
-        let playResult;
-        if (typeof onDone === 'function') playResult = onDone();
-        else playResult = mainVideo.play();
-        await Promise.resolve(playResult);
-        // Let Safari settle at the target timestamp, then ramp audio in instead
-        // of exposing the first decoded sample abruptly.
-        if (hasGain) {
+        const ctxInstance = getAudioContext();
+        videoMediaSourceNode = ctxInstance.createMediaElementSource(mainVideo);
+        videoGainNode = ctxInstance.createGain();
+        videoGainNode.gain.value = 1;
+        videoMediaSourceNode.connect(videoGainNode);
+        videoGainNode.connect(ctxInstance.destination);
+        return true;
+      } catch (err) {
+        console.warn('无法启用 Web Audio 视频音频路由（可能已连接），将跳过:', err);
+        return false;
+      }
+    }
+
+    function safeVideoSeek(time, onDone) {
+      if (!isVideoMode || !mainVideo.src || isSeekingVideo) return;
+      const hasGain = ensureVideoAudioGraph();
+      isSeekingVideo = true;
+      const wasPlaying = !mainVideo.paused && isPlaying;
+      const shouldResume = wasPlaying || typeof onDone === 'function';
+      const duration = Number.isFinite(mainVideo.duration) ? mainVideo.duration : mediaDuration;
+      const target = Math.max(0, Math.min(duration || 0, Number(time) || 0));
+      let finished = false;
+      let seekTimeout = null;
+
+      const gainParam = hasGain ? videoGainNode.gain : null;
+      const previousGain = hasGain ? gainParam.value : 1;
+
+      const fadeTo = (value, seconds) => {
+        if (!hasGain || !audioCtx) return;
+        const now = audioCtx.currentTime;
+        gainParam.cancelScheduledValues(now);
+        gainParam.setValueAtTime(gainParam.value, now);
+        gainParam.linearRampToValueAtTime(value, now + seconds);
+      };
+      const restoreGain = () => {
+        if (hasGain && audioCtx) {
           const now = audioCtx.currentTime;
           gainParam.cancelScheduledValues(now);
-          gainParam.setValueAtTime(0, now);
-          gainParam.linearRampToValueAtTime(previousGain || 1, now + 0.045);
-          resumeTimer = setTimeout(() => { isSeekingVideo = false; }, 60);
-        } else {
-          isSeekingVideo = false;
+          gainParam.setValueAtTime(gainParam.value, now);
+          gainParam.linearRampToValueAtTime(previousGain || 1, now + 0.035);
         }
-      } catch (err) {
-        console.warn('seek 后恢复播放失败:', err);
-        restoreGain();
+        isSeekingVideo = false;
+      };
+
+      const finish = () => {
+        if (finished) return;
+        finished = true;
+        if (seekTimeout !== null) clearTimeout(seekTimeout);
+        mainVideo.removeEventListener('seeked', onSeeked);
+        setTimeout(async () => {
+          updateProgress();
+          requestDrawWaveform();
+          if (!shouldResume) {
+            restoreGain();
+            return;
+          }
+          try {
+            let playResult;
+            if (typeof onDone === 'function') playResult = onDone();
+            else playResult = mainVideo.play();
+            await Promise.resolve(playResult);
+            if (hasGain && audioCtx) {
+              const now = audioCtx.currentTime;
+              gainParam.cancelScheduledValues(now);
+              gainParam.setValueAtTime(0, now);
+              gainParam.linearRampToValueAtTime(previousGain || 1, now + 0.045);
+              setTimeout(() => { isSeekingVideo = false; }, 60);
+            } else {
+              isSeekingVideo = false;
+            }
+          } catch (err) {
+            console.warn('seek 后恢复播放失败:', err);
+            restoreGain();
+          }
+        }, 35);
+      };
+
+      const onSeeked = () => requestAnimationFrame(() => requestAnimationFrame(finish));
+
+      if (Math.abs(mainVideo.currentTime - target) < 0.025) {
+        isSeekingVideo = false;
+        if (typeof onDone === 'function') {
+          try { Promise.resolve(onDone()).catch(err => console.warn('播放失败:', err)); }
+          catch (err) {}
+        }
+        return;
       }
-    }, 35);
-  };
 
-  const onSeeked = () => requestAnimationFrame(() => requestAnimationFrame(finish));
-
-  if (Math.abs(mainVideo.currentTime - target) < 0.025) {
-    isSeekingVideo = false;
-    if (typeof onDone === 'function') {
-      try { Promise.resolve(onDone()).catch(err => console.warn('播放失败:', err)); }
-      catch (err) { console.warn('播放失败:', err); }
+      if (hasGain) fadeTo(0, 0.012);
+      mainVideo.addEventListener('seeked', onSeeked, { once: true });
+      setTimeout(() => {
+        mainVideo.pause();
+        mainVideo.currentTime = target;
+        seekTimeout = setTimeout(finish, 1000);
+      }, hasGain ? 15 : 0);
     }
-    return;
-  }
-
-  // Fade out before pausing and seeking. Register seeked before changing
-  // currentTime so a fast seek cannot race past the listener.
-  if (hasGain) fadeTo(0, 0.012);
-  mainVideo.addEventListener('seeked', onSeeked, { once: true });
-  setTimeout(() => {
-    mainVideo.pause();
-    mainVideo.currentTime = target;
-    seekTimeout = setTimeout(finish, 1000);
-  }, hasGain ? 15 : 0);
-}
     function seekMedia(targetTime) {
       const t = Math.max(0, Math.min(mediaDuration || 99999, targetTime));
       pauseOffset = t;
@@ -553,6 +548,9 @@ function safeVideoSeek(time, onDone) {
       }
     }
     function togglePlay() {
+      // 首次用户交互触发 AudioContext 解锁
+      getAudioContext();
+
       if (isVideoMode) {
         if (!mainVideo.src) return;
         if (isPlaying || !mainVideo.paused) {
@@ -627,7 +625,7 @@ function safeVideoSeek(time, onDone) {
       const dur = mediaDuration || (isVideoMode ? mainVideo.duration : 0);
       if (dur) seekMedia((e.target.value / 100) * dur);
     });
-    // ========== 3. Waveform ==========
+    // ========== 3. Waveform (已修复 Firefox 变蓝 Bug) ==========
     function invalidateWaveformCache() {
       waveformCache = null;
       cacheWidth = 0;
@@ -643,7 +641,8 @@ function safeVideoSeek(time, onDone) {
       octx.scale(dpr, dpr);
       octx.fillStyle = '#020617';
       octx.fillRect(0, 0, canvasWidth, canvasHeight);
-      if (!rawChannelData) {
+      
+      if (!rawChannelData || canvasWidth <= 0 || canvasHeight <= 0) {
         octx.fillStyle = '#475569';
         octx.font = '13px sans-serif';
         octx.textAlign = 'center';
@@ -654,6 +653,7 @@ function safeVideoSeek(time, onDone) {
         cacheZoom = zoomLevel;
         return;
       }
+      
       const midY = canvasHeight / 2;
       const maxBarHeight = midY * 0.88;
       const totalSamples = rawChannelData.length;
@@ -692,9 +692,12 @@ function safeVideoSeek(time, onDone) {
     }
     function drawWaveform() {
       const containerWidth = waveformScrollContainer.clientWidth;
-      const canvasWidth = Math.max(containerWidth, Math.floor(containerWidth * zoomLevel));
-      const canvasHeight = waveformScrollContainer.clientHeight || 120;
+      // 限制最大宽度，防止 Firefox 在超大缩放下 Canvas 崩溃或渲染异常变蓝
+      const maxAllowedWidth = 32767; 
+      const canvasWidth = Math.min(maxAllowedWidth, Math.max(containerWidth, Math.floor(containerWidth * zoomLevel)));
+      const canvasHeight = Math.max(50, waveformScrollContainer.clientHeight || 120);
       const dpr = window.devicePixelRatio || 1;
+
       if (waveformCanvas.width !== canvasWidth * dpr || waveformCanvas.height !== canvasHeight * dpr) {
         waveformCanvas.width = canvasWidth * dpr;
         waveformCanvas.height = canvasHeight * dpr;
@@ -705,7 +708,9 @@ function safeVideoSeek(time, onDone) {
       if (!waveformCache || cacheWidth !== canvasWidth || cacheHeight !== canvasHeight || cacheZoom !== zoomLevel) {
         buildWaveformCache(canvasWidth, canvasHeight);
       }
-      ctx.drawImage(waveformCache, 0, 0, canvasWidth, canvasHeight);
+      if (waveformCache) {
+        ctx.drawImage(waveformCache, 0, 0, canvasWidth, canvasHeight);
+      }
       const duration = mediaDuration || (isVideoMode ? mainVideo.duration : 0) || 0;
       if (duration > 0) {
         if (pointA !== null && pointB !== null) {
@@ -986,9 +991,7 @@ function safeVideoSeek(time, onDone) {
     }
 
     function supportsFilePicker(apiName) {
-      // File System Access API generally requires a secure top-level context.
-      return window.isSecureContext === true &&
-        typeof window[apiName] === 'function';
+      return window.isSecureContext === true && typeof window[apiName] === 'function';
     }
 
     openNativeFileBtn.addEventListener('click', async () => {
@@ -1013,8 +1016,6 @@ function safeVideoSeek(time, onDone) {
           saveBtnText.textContent = '覆写保存 (⌘S)';
         } catch (err) {
           if (err && err.name === 'AbortError') return;
-          console.warn('打开文件选择器失败，改用普通文件选择：', err);
-          setSaveStatus('无法打开系统文件选择器，请在弹出的窗口中选择笔记文件。');
           fallbackNoteFileInput.click();
         }
       } else {
@@ -1031,9 +1032,8 @@ function safeVideoSeek(time, onDone) {
         noteTextarea.value = text;
         loadedFileName = file.name;
         wordCountText.textContent = `${text.length} 字`;
-        // A normal <input type=file> grants read access only, not overwrite permission.
         currentFileHandle = null;
-        setSaveStatus(`已载入: ${file.name}。此浏览器未提供直接覆写权限；保存时将导出文件。`);
+        setSaveStatus(`已载入: ${file.name}。保存时将导出文件。`);
         saveBtnText.textContent = '保存笔记 (⌘S)';
       };
       reader.onerror = () => setSaveStatus('读取文件失败，请重新选择文件。', 'error');
@@ -1062,7 +1062,6 @@ function safeVideoSeek(time, onDone) {
           setSaveStatus(`已于 ${timeNow} 保存至: ${currentFileHandle.name}`, 'success');
           return;
         } catch (err) {
-          console.warn('覆写保存失败：', err);
           setSaveStatus('无法覆写原文件，将尝试另存为。');
         }
       }
@@ -1086,9 +1085,7 @@ function safeVideoSeek(time, onDone) {
           return;
         } catch (err) {
           if (err && err.name === 'AbortError') return;
-          console.warn('系统保存选择器失败，改用下载导出：', err);
           exportDownloadFallback(content, forceSaveAs);
-          setSaveStatus('系统保存窗口不可用，已改用下载方式导出笔记。', 'success');
           return;
         }
       }
@@ -1109,8 +1106,6 @@ function safeVideoSeek(time, onDone) {
           const stem = dot > 0 ? loadedFileName.slice(0, dot) : loadedFileName;
           const ext = dot > 0 ? loadedFileName.slice(dot) : '.md';
           downloadName = `${stem}_copy${ext}`;
-        } else {
-          downloadName = defaultName;
         }
       }
       a.download = downloadName;
@@ -1133,7 +1128,6 @@ function safeVideoSeek(time, onDone) {
       noteTextarea.focus();
       wordCountText.textContent = `${noteTextarea.value.length} 字`;
     });
-    // 输入时：字数实时更新 + localStorage 防抖保存（消除输入延迟）
     noteTextarea.addEventListener('input', () => {
       wordCountText.textContent = `${noteTextarea.value.length} 字`;
       if (noteSaveTimer) clearTimeout(noteSaveTimer);
@@ -1143,7 +1137,6 @@ function safeVideoSeek(time, onDone) {
         } catch (e) {}
       }, 300);
     });
-    // 恢复备份
     try {
       const savedNote = localStorage.getItem('local_note_backup');
       if (savedNote) {
