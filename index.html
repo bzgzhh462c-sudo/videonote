@@ -4,10 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AudioVisualizer</title>
-<link rel="icon" type="image/png" href="favorate.png" sizes="32x32">
-<link rel="icon" type="image/png" href="favorate.png" sizes="16x16">
-<link rel="apple-touch-icon" href="favorate.png">
-<link rel="shortcut icon" href="favorate.png">
+  <link rel="icon" type="image/png" href="favorate.png" sizes="32x32">
+  <link rel="icon" type="image/png" href="favorate.png" sizes="16x16">
+  <link rel="apple-touch-icon" href="favorate.png">
+  <link rel="shortcut icon" href="favorate.png">
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
@@ -199,6 +199,7 @@
     const panelResizer = document.getElementById('panelResizer');
     const leftPanel = document.getElementById('leftPanel');
     const rightPanel = document.getElementById('rightPanel');
+
     // ========== State ==========
     let audioCtx = null;
     let videoMediaSourceNode = null;
@@ -226,17 +227,16 @@
     let dragRangeDuration = 0;
     let dragPlayheadOffset = 0;
     let previewTime = null;
-    let currentFileHandle = null;   // 核心：绑定的可写文件句柄
+    let currentFileHandle = null;
     let loadedFileName = '';
     let waveformCache = null;
     let cacheWidth = 0;
     let cacheHeight = 0;
     let cacheZoom = 0;
-    let cacheChannelData = null;
-    let cacheDpr = 0;
     let renderPending = false;
     let progressRAF = null;
-    let noteSaveTimer = null; // 笔记防抖定时器
+    let noteSaveTimer = null;
+
     // ========== 1. Load Media ==========
     async function loadMediaFile(file) {
       try {
@@ -251,20 +251,27 @@
         mainVideo.muted = false;
         mainVideo.volume = 1;
         mainVideo.pause();
+
+        // 重置 GainNode，防止残留静音
+        if (videoGainNode && audioCtx) {
+          try {
+            videoGainNode.gain.cancelScheduledValues(audioCtx.currentTime);
+            videoGainNode.gain.setValueAtTime(1, audioCtx.currentTime);
+          } catch (e) {}
+        }
+
         audioBuffer = null;
         rawChannelData = null;
         mediaDuration = 0;
         previewTime = null;
         isSeekingVideo = false;
+
         const isVideo = file.type.startsWith('video/') ||
           /\.(mp4|webm|mov|mkv|m4v|avi)$/i.test(file.name);
+
         const arrayBuffer = await file.arrayBuffer();
-        if (!audioCtx) {
-          audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-          audioCtx.addEventListener('statechange', () => {
-            console.log('AudioContext state:', audioCtx.state);
-          });
-        }
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
         try {
           audioBuffer = await audioCtx.decodeAudioData(arrayBuffer.slice(0));
           mediaDuration = audioBuffer.duration;
@@ -273,7 +280,9 @@
           console.warn('音频解码失败:', decodeErr);
           if (!isVideo) throw decodeErr;
         }
+
         mediaFileName.textContent = file.name;
+
         if (isVideo) {
           isVideoMode = true;
           mediaObjectURL = URL.createObjectURL(file);
@@ -297,6 +306,7 @@
           audioCoverBox.classList.remove('hidden');
           audioCoverBox.classList.add('flex');
         }
+
         invalidateWaveformCache();
         requestDrawWaveform();
         updateProgress();
@@ -305,10 +315,12 @@
         alert('无法解析该文件，请尝试其他 mp3 / wav / mp4 / webm 格式。');
       }
     }
+
     mediaFileInput.addEventListener('change', (e) => {
       const file = e.target.files[0];
       if (file) loadMediaFile(file);
     });
+
     // ========== 2. Playback ==========
     function getCurrentTime() {
       if (previewTime !== null) return previewTime;
@@ -332,101 +344,228 @@
       }
       return Math.min(mediaDuration, Math.max(0, cur));
     }
-    function playMedia(offset = 0) {
-  previewTime = null;
 
-  // ========== 视频模式 ==========
-  if (isVideoMode) {
-    if (!mainVideo.src) return;
-    if (isLooping && pointA !== null && pointB !== null && pointA < pointB) {
-      if (offset < pointA || offset >= pointB) offset = pointA;
+    function ensureVideoAudioGraph() {
+      if (!isVideoMode || !mainVideo.src) return false;
+      if (videoGainNode) return true;
+
+      try {
+        if (!audioCtx) {
+          audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        videoMediaSourceNode = audioCtx.createMediaElementSource(mainVideo);
+        videoGainNode = audioCtx.createGain();
+        videoGainNode.gain.value = 1;
+        videoMediaSourceNode.connect(videoGainNode);
+        videoGainNode.connect(audioCtx.destination);
+
+        // Safari：接管后由 GainNode 控制，元素自身静音
+        mainVideo.muted = true;
+        mainVideo.volume = 1;
+        return true;
+      } catch (err) {
+        console.warn('无法启用 Web Audio 视频路由，将回退到元素播放:', err);
+        videoMediaSourceNode = null;
+        videoGainNode = null;
+        return false;
+      }
     }
-    // Use the browser's native media output for video. Routing a video element
-    // through Web Audio can produce silent playback in Safari when its context
-    // is suspended/interrupted, even while the video timeline advances.
-    safeVideoSeek(offset, () => {
-      return mainVideo.play().catch(e => { console.warn('video play', e); throw e; });
-    });
-    isPlaying = true;
-    playPauseBtn.innerHTML = '<i class="fa-solid fa-pause"></i>';
-    startProgressLoop();
-    return;
-  }
 
-  // ========== 纯音频模式（强化版） ==========
-  if (!audioBuffer) {
-    console.warn('audioBuffer 为空，无法播放');
-    return;
-  }
+    function safeVideoSeek(time, onDone) {
+      if (!isVideoMode || !mainVideo.src || isSeekingVideo) return;
 
-  // 确保 AudioContext 存在
-  if (!audioCtx) {
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  }
+      const hasGain = ensureVideoAudioGraph();
+      isSeekingVideo = true;
 
-  const doStart = () => {
-    try {
-      stopAudioSource();
+      const wasPlaying = !mainVideo.paused && isPlaying;
+      const shouldResume = wasPlaying || typeof onDone === 'function';
+      const duration = Number.isFinite(mainVideo.duration) ? mainVideo.duration : mediaDuration;
+      const target = Math.max(0, Math.min(duration || 0, Number(time) || 0));
 
-      sourceNode = audioCtx.createBufferSource();
-      sourceNode.buffer = audioBuffer;
+      let finished = false;
+      let seekTimeout = null;
 
-      if (isLooping && pointA !== null && pointB !== null && pointA < pointB) {
-        if (offset < pointA || offset >= pointB) offset = pointA;
-        sourceNode.loop = true;
-        sourceNode.loopStart = pointA;
-        sourceNode.loopEnd = pointB;
-      } else {
-        sourceNode.loop = false;
+      const gainParam = hasGain ? videoGainNode.gain : null;
+
+      const fadeTo = (value, seconds) => {
+        if (!hasGain || !audioCtx) return;
+        const now = audioCtx.currentTime;
+        gainParam.cancelScheduledValues(now);
+        gainParam.setValueAtTime(gainParam.value, now);
+        gainParam.linearRampToValueAtTime(value, now + seconds);
+      };
+
+      const restoreGain = () => {
+        if (hasGain && audioCtx) {
+          const now = audioCtx.currentTime;
+          gainParam.cancelScheduledValues(now);
+          gainParam.setValueAtTime(0, now);
+          gainParam.linearRampToValueAtTime(1, now + 0.06);
+        }
+        isSeekingVideo = false;
+      };
+
+      const finish = () => {
+        if (finished) return;
+        finished = true;
+        if (seekTimeout !== null) clearTimeout(seekTimeout);
+        mainVideo.removeEventListener('seeked', onSeeked);
+
+        setTimeout(async () => {
+          updateProgress();
+          requestDrawWaveform();
+
+          if (!shouldResume) {
+            restoreGain();
+            return;
+          }
+
+          try {
+            if (audioCtx && audioCtx.state !== 'running') {
+              await audioCtx.resume();
+            }
+
+            let playResult;
+            if (typeof onDone === 'function') {
+              playResult = onDone();
+            } else {
+              playResult = mainVideo.play();
+            }
+            await Promise.resolve(playResult);
+
+            if (hasGain) {
+              const now = audioCtx.currentTime;
+              gainParam.cancelScheduledValues(now);
+              gainParam.setValueAtTime(0, now);
+              gainParam.linearRampToValueAtTime(1, now + 0.08);
+              setTimeout(() => { isSeekingVideo = false; }, 100);
+            } else {
+              isSeekingVideo = false;
+            }
+          } catch (err) {
+            console.warn('seek 后恢复播放失败:', err);
+            restoreGain();
+          }
+        }, 40);
+      };
+
+      const onSeeked = () => {
+        requestAnimationFrame(() => requestAnimationFrame(finish));
+      };
+
+      if (Math.abs(mainVideo.currentTime - target) < 0.025) {
+        isSeekingVideo = false;
+        if (typeof onDone === 'function') {
+          Promise.resolve(onDone()).catch(err => console.warn('播放失败:', err));
+        }
+        return;
       }
 
-      sourceNode.connect(audioCtx.destination);
-      sourceNode.start(0, Math.max(0, offset));
+      if (hasGain) fadeTo(0, 0.015);
 
-      startTime = audioCtx.currentTime - offset;
-      isPlaying = true;
-      playPauseBtn.innerHTML = '<i class="fa-solid fa-pause"></i>';
+      mainVideo.addEventListener('seeked', onSeeked, { once: true });
 
-      sourceNode.onended = () => {
-        if (!isLooping && isPlaying) {
-          stopPlayback();
-          pauseOffset = 0;
+      setTimeout(() => {
+        mainVideo.pause();
+        mainVideo.currentTime = target;
+        seekTimeout = setTimeout(finish, 1200);
+      }, hasGain ? 20 : 0);
+    }
+
+    function playMedia(offset = 0) {
+      previewTime = null;
+
+      // ========== 视频模式 ==========
+      if (isVideoMode) {
+        if (!mainVideo.src) return;
+
+        if (isLooping && pointA !== null && pointB !== null && pointA < pointB) {
+          if (offset < pointA || offset >= pointB) offset = pointA;
+        }
+
+        ensureVideoAudioGraph();
+
+        safeVideoSeek(offset, async () => {
+          if (audioCtx && audioCtx.state !== 'running') {
+            await audioCtx.resume();
+          }
+          return mainVideo.play().catch(e => {
+            console.warn('video play', e);
+            throw e;
+          });
+        });
+
+        isPlaying = true;
+        playPauseBtn.innerHTML = '<i class="fa-solid fa-pause"></i>';
+        startProgressLoop();
+        return;
+      }
+
+      // ========== 纯音频模式 ==========
+      if (!audioBuffer) {
+        console.warn('audioBuffer 为空，无法播放');
+        return;
+      }
+
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+
+      const doStart = () => {
+        try {
+          stopAudioSource();
+
+          sourceNode = audioCtx.createBufferSource();
+          sourceNode.buffer = audioBuffer;
+
+          if (isLooping && pointA !== null && pointB !== null && pointA < pointB) {
+            if (offset < pointA || offset >= pointB) offset = pointA;
+            sourceNode.loop = true;
+            sourceNode.loopStart = pointA;
+            sourceNode.loopEnd = pointB;
+          } else {
+            sourceNode.loop = false;
+          }
+
+          sourceNode.connect(audioCtx.destination);
+          sourceNode.start(0, Math.max(0, offset));
+
+          startTime = audioCtx.currentTime - offset;
+          isPlaying = true;
+          playPauseBtn.innerHTML = '<i class="fa-solid fa-pause"></i>';
+
+          sourceNode.onended = () => {
+            if (!isLooping && isPlaying) {
+              stopPlayback();
+              pauseOffset = 0;
+            }
+          };
+
+          startProgressLoop();
+        } catch (err) {
+          console.error('纯音频启动失败:', err);
         }
       };
 
-      startProgressLoop();
-      console.log('纯音频开始播放', { offset, state: audioCtx.state });
-    } catch (err) {
-      console.error('纯音频启动失败:', err);
-    }
-  };
-
-  // Safari may leave AudioContext suspended/interrupted after file decode or
-  // tab changes. Do not start a source into a suspended context (silent playback).
-  if (audioCtx.state !== 'running') {
-    // Call resume directly from the play-button interaction for Safari's
-    // user-activation policy. A later click can retry if Safari reports
-    // 'interrupted' instead of transitioning to 'running'.
-    audioCtx.resume().then(() => {
-      if (audioCtx.state === 'running') {
-        doStart();
+      if (audioCtx.state === 'suspended' || audioCtx.state === 'interrupted') {
+        audioCtx.resume()
+          .then(() => {
+            if (audioCtx.state === 'running') doStart();
+            else setTimeout(() => audioCtx.resume().then(doStart).catch(doStart), 60);
+          })
+          .catch(() => doStart());
       } else {
-        console.warn('Safari AudioContext 状态仍不是 running:', audioCtx.state,
-          '请再次点击播放；若持续发生，请检查系统输出设备和 Safari 网站设置。');
+        doStart();
       }
-    }).catch(err => {
-      console.error('AudioContext resume 失败:', err);
-    });
-  } else {
-    doStart();
-  }
-}
+    }
+
     function stopAudioSource() {
       if (sourceNode) {
         try { sourceNode.stop(); sourceNode.disconnect(); } catch (e) {}
         sourceNode = null;
       }
     }
+
     function stopPlayback() {
       if (isVideoMode) {
         mainVideo.pause();
@@ -437,102 +576,7 @@
       playPauseBtn.innerHTML = '<i class="fa-solid fa-play"></i>';
       stopProgressLoop();
     }
-function ensureVideoAudioGraph() {
-  // Intentionally bypass Web Audio for video. Native HTMLMediaElement output
-  // is more reliable in Safari; the app does not require a video audio graph
-  // for seeking, looping, waveform display, or playback controls.
-  return false;
-}
 
-function safeVideoSeek(time, onDone) {
-  if (!isVideoMode || !mainVideo.src || isSeekingVideo) return;
-  const hasGain = ensureVideoAudioGraph();
-  isSeekingVideo = true;
-  const wasPlaying = !mainVideo.paused && isPlaying;
-  const shouldResume = wasPlaying || typeof onDone === 'function';
-  const duration = Number.isFinite(mainVideo.duration) ? mainVideo.duration : mediaDuration;
-  const target = Math.max(0, Math.min(duration || 0, Number(time) || 0));
-  let finished = false;
-  let seekTimeout = null;
-  let resumeTimer = null;
-
-  const gainParam = hasGain ? videoGainNode.gain : null;
-  const gainNow = hasGain ? audioCtx.currentTime : 0;
-  const previousGain = hasGain ? gainParam.value : 1;
-
-  const fadeTo = (value, seconds) => {
-    if (!hasGain) return;
-    const now = audioCtx.currentTime;
-    gainParam.cancelScheduledValues(now);
-    gainParam.setValueAtTime(gainParam.value, now);
-    gainParam.linearRampToValueAtTime(value, now + seconds);
-  };
-  const restoreGain = () => {
-    if (hasGain && audioCtx) {
-      const now = audioCtx.currentTime;
-      gainParam.cancelScheduledValues(now);
-      gainParam.setValueAtTime(gainParam.value, now);
-      gainParam.linearRampToValueAtTime(previousGain || 1, now + 0.035);
-    }
-    isSeekingVideo = false;
-  };
-
-  const finish = () => {
-    if (finished) return;
-    finished = true;
-    if (seekTimeout !== null) clearTimeout(seekTimeout);
-    mainVideo.removeEventListener('seeked', onSeeked);
-    setTimeout(async () => {
-      updateProgress();
-      requestDrawWaveform();
-      if (!shouldResume) {
-        restoreGain();
-        return;
-      }
-      try {
-        let playResult;
-        if (typeof onDone === 'function') playResult = onDone();
-        else playResult = mainVideo.play();
-        await Promise.resolve(playResult);
-        // Let Safari settle at the target timestamp, then ramp audio in instead
-        // of exposing the first decoded sample abruptly.
-        if (hasGain) {
-          const now = audioCtx.currentTime;
-          gainParam.cancelScheduledValues(now);
-          gainParam.setValueAtTime(0, now);
-          gainParam.linearRampToValueAtTime(previousGain || 1, now + 0.045);
-          resumeTimer = setTimeout(() => { isSeekingVideo = false; }, 60);
-        } else {
-          isSeekingVideo = false;
-        }
-      } catch (err) {
-        console.warn('seek 后恢复播放失败:', err);
-        restoreGain();
-      }
-    }, 35);
-  };
-
-  const onSeeked = () => requestAnimationFrame(() => requestAnimationFrame(finish));
-
-  if (Math.abs(mainVideo.currentTime - target) < 0.025) {
-    isSeekingVideo = false;
-    if (typeof onDone === 'function') {
-      try { Promise.resolve(onDone()).catch(err => console.warn('播放失败:', err)); }
-      catch (err) { console.warn('播放失败:', err); }
-    }
-    return;
-  }
-
-  // Fade out before pausing and seeking. Register seeked before changing
-  // currentTime so a fast seek cannot race past the listener.
-  if (hasGain) fadeTo(0, 0.012);
-  mainVideo.addEventListener('seeked', onSeeked, { once: true });
-  setTimeout(() => {
-    mainVideo.pause();
-    mainVideo.currentTime = target;
-    seekTimeout = setTimeout(finish, 1000);
-  }, hasGain ? 15 : 0);
-}
     function seekMedia(targetTime) {
       const t = Math.max(0, Math.min(mediaDuration || 99999, targetTime));
       pauseOffset = t;
@@ -548,7 +592,13 @@ function safeVideoSeek(time, onDone) {
         }
       }
     }
+
     function togglePlay() {
+      // 任何播放操作都尝试唤醒 AudioContext（Safari 关键）
+      if (audioCtx && audioCtx.state !== 'running') {
+        audioCtx.resume().catch(() => {});
+      }
+
       if (isVideoMode) {
         if (!mainVideo.src) return;
         if (isPlaying || !mainVideo.paused) {
@@ -567,9 +617,11 @@ function safeVideoSeek(time, onDone) {
         playMedia(pauseOffset);
       }
     }
+
     playPauseBtn.addEventListener('click', togglePlay);
     audioCoverBox.addEventListener('click', togglePlay);
     mainVideo.addEventListener('click', togglePlay);
+
     mainVideo.addEventListener('timeupdate', () => {
       if (!isVideoMode || !isPlaying || isMouseDown || isSeekingVideo) return;
       if (isLooping && pointA !== null && pointB !== null && pointA < pointB) {
@@ -578,17 +630,20 @@ function safeVideoSeek(time, onDone) {
         }
       }
     });
+
     mainVideo.addEventListener('ended', () => {
       if (!isLooping) {
         stopPlayback();
         pauseOffset = 0;
       }
     });
+
     mainVideo.addEventListener('play', () => {
       isPlaying = true;
       playPauseBtn.innerHTML = '<i class="fa-solid fa-pause"></i>';
       startProgressLoop();
     });
+
     mainVideo.addEventListener('pause', () => {
       if (isVideoMode) {
         isPlaying = false;
@@ -597,6 +652,7 @@ function safeVideoSeek(time, onDone) {
         stopProgressLoop();
       }
     });
+
     function startProgressLoop() {
       stopProgressLoop();
       function loop() {
@@ -607,40 +663,52 @@ function safeVideoSeek(time, onDone) {
       }
       progressRAF = requestAnimationFrame(loop);
     }
+
     function stopProgressLoop() {
       if (progressRAF) {
         cancelAnimationFrame(progressRAF);
         progressRAF = null;
       }
     }
+
     function updateProgress() {
       const cur = getCurrentTime();
       const dur = mediaDuration || (isVideoMode ? mainVideo.duration : 0) || 0;
       currentTimeDisplay.textContent = `${formatTime(cur)} / ${formatTime(dur)}`;
       mediaProgressBar.value = dur ? (cur / dur) * 100 : 0;
     }
+
     mediaProgressBar.addEventListener('input', (e) => {
       const dur = mediaDuration || (isVideoMode ? mainVideo.duration : 0);
       if (dur) seekMedia((e.target.value / 100) * dur);
     });
+
     // ========== 3. Waveform ==========
     function invalidateWaveformCache() {
       waveformCache = null;
       cacheWidth = 0;
       cacheHeight = 0;
       cacheZoom = 0;
-      cacheChannelData = null;
-      cacheDpr = 0;
     }
+
     function buildWaveformCache(canvasWidth, canvasHeight) {
+      if (canvasWidth < 1 || canvasHeight < 1) return;
+
       const dpr = window.devicePixelRatio || 1;
       const off = document.createElement('canvas');
-      off.width = Math.max(1, Math.round(canvasWidth * dpr));
-      off.height = Math.max(1, Math.round(canvasHeight * dpr));
+      try {
+        off.width = canvasWidth * dpr;
+        off.height = canvasHeight * dpr;
+      } catch (e) {
+        console.warn('波形 canvas 创建失败', e);
+        return;
+      }
+
       const octx = off.getContext('2d');
       octx.scale(dpr, dpr);
       octx.fillStyle = '#020617';
       octx.fillRect(0, 0, canvasWidth, canvasHeight);
+
       if (!rawChannelData) {
         octx.fillStyle = '#475569';
         octx.font = '13px sans-serif';
@@ -650,42 +718,41 @@ function safeVideoSeek(time, onDone) {
         cacheWidth = canvasWidth;
         cacheHeight = canvasHeight;
         cacheZoom = zoomLevel;
-        cacheChannelData = rawChannelData;
-        cacheDpr = dpr;
         return;
       }
+
       const midY = canvasHeight / 2;
       const maxBarHeight = midY * 0.88;
       const totalSamples = rawChannelData.length;
+      const step = Math.max(1, Math.ceil(totalSamples / canvasWidth));
+
       octx.fillStyle = '#38bdf8';
-      // Map each pixel column to a proportional sample range. This also works
-      // when zooming makes the canvas wider than the audio sample array; empty
-      // columns must remain background, not be treated as full-scale samples.
       for (let i = 0; i < canvasWidth; i++) {
-        const start = Math.floor(i * totalSamples / canvasWidth);
-        const end = Math.min(totalSamples, Math.max(start + 1, Math.floor((i + 1) * totalSamples / canvasWidth)));
-        if (start >= totalSamples || end <= start) continue;
         let min = 1.0, max = -1.0;
+        const start = i * step;
+        const end = Math.min(start + step, totalSamples);
         for (let j = start; j < end; j++) {
           const val = rawChannelData[j];
           if (val < min) min = val;
           if (val > max) max = val;
         }
-        const h = Math.max(Math.abs(min), Math.abs(max)) * maxBarHeight;
+        const amp = Math.max(Math.abs(min), Math.abs(max));
+        const h = amp * maxBarHeight;
         octx.fillRect(i, midY - h, 1, Math.max(1, h * 2));
       }
+
       octx.strokeStyle = '#1e293b';
       octx.beginPath();
       octx.moveTo(0, midY);
       octx.lineTo(canvasWidth, midY);
       octx.stroke();
+
       waveformCache = off;
       cacheWidth = canvasWidth;
       cacheHeight = canvasHeight;
       cacheZoom = zoomLevel;
-      cacheChannelData = rawChannelData;
-      cacheDpr = dpr;
     }
+
     function requestDrawWaveform() {
       if (renderPending) return;
       renderPending = true;
@@ -694,25 +761,31 @@ function safeVideoSeek(time, onDone) {
         renderPending = false;
       });
     }
+
     function drawWaveform() {
       const containerWidth = waveformScrollContainer.clientWidth;
-      const canvasWidth = Math.max(containerWidth, Math.floor(containerWidth * zoomLevel));
+      // 限制最大宽度，防止 Firefox 超大 canvas 绘制失败变成一片蓝
+      const MAX_WAVEFORM_WIDTH = 8192;
+      const desiredWidth = Math.max(containerWidth, Math.floor(containerWidth * zoomLevel));
+      const canvasWidth = Math.min(desiredWidth, MAX_WAVEFORM_WIDTH);
       const canvasHeight = waveformScrollContainer.clientHeight || 120;
       const dpr = window.devicePixelRatio || 1;
-      const pixelWidth = Math.max(1, Math.round(canvasWidth * dpr));
-      const pixelHeight = Math.max(1, Math.round(canvasHeight * dpr));
-      if (waveformCanvas.width !== pixelWidth || waveformCanvas.height !== pixelHeight) {
-        waveformCanvas.width = pixelWidth;
-        waveformCanvas.height = pixelHeight;
+
+      if (waveformCanvas.width !== canvasWidth * dpr || waveformCanvas.height !== canvasHeight * dpr) {
+        waveformCanvas.width = canvasWidth * dpr;
+        waveformCanvas.height = canvasHeight * dpr;
         waveformCanvas.style.width = canvasWidth + 'px';
         waveformCanvas.style.height = canvasHeight + 'px';
       }
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      if (!waveformCache || cacheWidth !== canvasWidth || cacheHeight !== canvasHeight ||
-          cacheZoom !== zoomLevel || cacheChannelData !== rawChannelData || cacheDpr !== dpr) {
+
+      if (!waveformCache || cacheWidth !== canvasWidth || cacheHeight !== canvasHeight || cacheZoom !== zoomLevel) {
         buildWaveformCache(canvasWidth, canvasHeight);
       }
-      ctx.drawImage(waveformCache, 0, 0, canvasWidth, canvasHeight);
+      if (waveformCache) {
+        ctx.drawImage(waveformCache, 0, 0, canvasWidth, canvasHeight);
+      }
+
       const duration = mediaDuration || (isVideoMode ? mainVideo.duration : 0) || 0;
       if (duration > 0) {
         if (pointA !== null && pointB !== null) {
@@ -766,6 +839,7 @@ function safeVideoSeek(time, onDone) {
         }
       }
     }
+
     // ========== 4. Zoom & Drag ==========
     zoomInBtn.addEventListener('click', () => {
       zoomLevel = Math.min(20.0, zoomLevel + 1.0);
@@ -784,6 +858,7 @@ function safeVideoSeek(time, onDone) {
       autoScrollStatusText.textContent = isAutoScrollEnabled ? '开' : '关';
       autoScrollStatusText.className = isAutoScrollEnabled ? 'text-emerald-400' : 'text-rose-400';
     });
+
     function getCanvasTimeFromEvent(e) {
       const rect = waveformCanvas.getBoundingClientRect();
       const cssWidth = waveformCanvas.clientWidth;
@@ -792,6 +867,7 @@ function safeVideoSeek(time, onDone) {
       if (!duration || cssWidth === 0) return 0;
       return Math.max(0, Math.min(duration, (clickX / cssWidth) * duration));
     }
+
     waveformCanvas.addEventListener('mousedown', (e) => {
       isMouseDown = true;
       dragStartX = e.clientX;
@@ -828,6 +904,7 @@ function safeVideoSeek(time, onDone) {
       dragStartA = clickTime;
       previewTime = clickTime;
     });
+
     window.addEventListener('mousemove', (e) => {
       const duration = mediaDuration || (isVideoMode ? mainVideo.duration : 0) || 0;
       if (!duration) return;
@@ -868,6 +945,7 @@ function safeVideoSeek(time, onDone) {
       updateABInputs();
       requestDrawWaveform();
     });
+
     window.addEventListener('mouseup', (e) => {
       if (!isMouseDown) return;
       const moveDist = Math.abs(e.clientX - dragStartX);
@@ -894,6 +972,7 @@ function safeVideoSeek(time, onDone) {
       }
       requestDrawWaveform();
     });
+
     function enforceABConstraint() {
       if (pointA !== null && pointB !== null) {
         if (pointB < pointA) {
@@ -902,12 +981,14 @@ function safeVideoSeek(time, onDone) {
         if (pointB - pointA < 0.1) pointB = pointA + 0.1;
       }
     }
+
     toggleLoopBtn.addEventListener('click', () => {
       isLooping = !isLooping;
       loopStatusText.textContent = isLooping ? '开' : '关';
       loopStatusText.className = isLooping ? 'text-emerald-400' : 'text-rose-400';
       if (isPlaying && !isVideoMode) playMedia(getCurrentTime());
     });
+
     clearABBtn.addEventListener('click', () => {
       pointA = null;
       pointB = null;
@@ -919,10 +1000,12 @@ function safeVideoSeek(time, onDone) {
       if (isPlaying && !isVideoMode) playMedia(getCurrentTime());
       requestDrawWaveform();
     });
+
     function updateABInputs() {
       inputTimeA.value = pointA !== null ? pointA.toFixed(1) : '0.0';
       inputTimeB.value = pointB !== null ? pointB.toFixed(1) : '0.0';
     }
+
     inputTimeA.addEventListener('change', () => {
       pointA = parseFloat(inputTimeA.value) || 0;
       enforceABConstraint();
@@ -972,6 +1055,7 @@ function safeVideoSeek(time, onDone) {
         requestDrawWaveform();
       }
     });
+
     // ========== 5. 笔记保存 ==========
     window.addEventListener('keydown', (e) => {
       if (e.code === 'Space' && document.activeElement !== noteTextarea && document.activeElement.tagName !== 'INPUT') {
@@ -983,6 +1067,7 @@ function safeVideoSeek(time, onDone) {
         saveNoteDirectly();
       }
     });
+
     function setSaveStatus(message, kind = 'info') {
       saveStateText.textContent = message;
       saveStateText.className = kind === 'success'
@@ -993,9 +1078,7 @@ function safeVideoSeek(time, onDone) {
     }
 
     function supportsFilePicker(apiName) {
-      // File System Access API generally requires a secure top-level context.
-      return window.isSecureContext === true &&
-        typeof window[apiName] === 'function';
+      return window.isSecureContext === true && typeof window[apiName] === 'function';
     }
 
     openNativeFileBtn.addEventListener('click', async () => {
@@ -1038,7 +1121,6 @@ function safeVideoSeek(time, onDone) {
         noteTextarea.value = text;
         loadedFileName = file.name;
         wordCountText.textContent = `${text.length} 字`;
-        // A normal <input type=file> grants read access only, not overwrite permission.
         currentFileHandle = null;
         setSaveStatus(`已载入: ${file.name}。此浏览器未提供直接覆写权限；保存时将导出文件。`);
         saveBtnText.textContent = '保存笔记 (⌘S)';
@@ -1131,6 +1213,7 @@ function safeVideoSeek(time, onDone) {
 
     saveNoteBtn.addEventListener('click', () => saveNoteDirectly(false));
     saveAsNoteBtn.addEventListener('click', () => saveNoteDirectly(true));
+
     insertTimestampBtn.addEventListener('click', () => {
       const timeStr = `[${formatTime(getCurrentTime())}] `;
       const start = noteTextarea.selectionStart;
@@ -1140,7 +1223,7 @@ function safeVideoSeek(time, onDone) {
       noteTextarea.focus();
       wordCountText.textContent = `${noteTextarea.value.length} 字`;
     });
-    // 输入时：字数实时更新 + localStorage 防抖保存（消除输入延迟）
+
     noteTextarea.addEventListener('input', () => {
       wordCountText.textContent = `${noteTextarea.value.length} 字`;
       if (noteSaveTimer) clearTimeout(noteSaveTimer);
@@ -1150,7 +1233,7 @@ function safeVideoSeek(time, onDone) {
         } catch (e) {}
       }, 300);
     });
-    // 恢复备份
+
     try {
       const savedNote = localStorage.getItem('local_note_backup');
       if (savedNote) {
@@ -1158,11 +1241,13 @@ function safeVideoSeek(time, onDone) {
         wordCountText.textContent = `${savedNote.length} 字`;
       }
     } catch (e) {}
+
     // ========== 6. Resizers ==========
     let isResizingH = false;
     waveformResizer.addEventListener('mousedown', (e) => { isResizingH = true; e.preventDefault(); });
     let isResizingV = false;
     panelResizer.addEventListener('mousedown', (e) => { isResizingV = true; e.preventDefault(); });
+
     window.addEventListener('mousemove', (e) => {
       if (isResizingH) {
         const containerRect = leftPanel.getBoundingClientRect();
@@ -1181,17 +1266,21 @@ function safeVideoSeek(time, onDone) {
         }
       }
     });
+
     window.addEventListener('mouseup', () => { isResizingH = false; isResizingV = false; });
+
     function formatTime(sec) {
       if (isNaN(sec) || sec == null) return '00:00.0';
       const m = Math.floor(sec / 60);
       const s = (sec % 60).toFixed(1);
       return `${m < 10 ? '0' + m : m}:${s < 10 ? '0' + s : s}`;
     }
+
     window.addEventListener('resize', () => {
       invalidateWaveformCache();
       requestDrawWaveform();
     });
+
     requestDrawWaveform();
   </script>
 </body>
