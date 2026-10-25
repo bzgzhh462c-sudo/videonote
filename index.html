@@ -764,18 +764,23 @@ function safeVideoSeek(time, onDone) {
       }
     }
     // ========== 4. Zoom & Drag ==========
-    zoomInBtn.addEventListener('click', () => {
-      zoomLevel = Math.min(20.0, zoomLevel + 1.0);
-      zoomLevelDisplay.textContent = zoomLevel.toFixed(1) + 'x';
-      invalidateWaveformCache();
-      requestDrawWaveform();
-    });
-    zoomOutBtn.addEventListener('click', () => {
-      zoomLevel = Math.max(1.0, zoomLevel - 1.0);
-      zoomLevelDisplay.textContent = zoomLevel.toFixed(1) + 'x';
-      invalidateWaveformCache();
-      requestDrawWaveform();
-    });
+const MAX_ZOOM = 500;
+const MIN_ZOOM = 1;
+const ZOOM_FACTOR = 1.5;
+
+zoomInBtn.addEventListener('click', () => {
+  zoomLevel = Math.min(MAX_ZOOM, zoomLevel * ZOOM_FACTOR);
+  zoomLevelDisplay.textContent = zoomLevel.toFixed(1) + 'x';
+  invalidateWaveformCache();
+  requestDrawWaveform();
+});
+
+zoomOutBtn.addEventListener('click', () => {
+  zoomLevel = Math.max(MIN_ZOOM, zoomLevel / ZOOM_FACTOR);
+  zoomLevelDisplay.textContent = zoomLevel.toFixed(1) + 'x';
+  invalidateWaveformCache();
+  requestDrawWaveform();
+});
     toggleAutoScrollBtn.addEventListener('click', () => {
       isAutoScrollEnabled = !isAutoScrollEnabled;
       autoScrollStatusText.textContent = isAutoScrollEnabled ? '开' : '关';
